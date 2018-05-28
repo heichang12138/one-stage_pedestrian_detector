@@ -1,21 +1,3 @@
-# --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
-# --------------------------------------------------------
-
-"""Fast R-CNN config system.
-
-This file specifies default config options for Fast R-CNN. You should not
-change values in this file. Instead, you should write a config file (in yaml)
-and use cfg_from_file(yaml_file) to load it and override the default options.
-
-Most tools in $ROOT/tools take a --cfg option to specify an override file.
-    - See tools/{train,test}_net.py for example code that uses cfg_from_file()
-    - See experiments/cfgs/*.yml for example YAML config override files
-"""
-
 import os
 import os.path as osp
 import numpy as np
@@ -23,21 +5,15 @@ from time import strftime, localtime
 from easydict import EasyDict as edict
 
 __C = edict()
-# Consumers can get config by:
-#   from fast_rcnn_config import cfg
+
 cfg = __C
 
-#
+__C.IMAGE_HEIGHT = 480
+__C.IMAGE_WIDTH = 640
 # Training options
-#
-
-# region proposal network (RPN) or not
-__C.IS_RPN = True
 __C.ANCHOR_SCALES = [8, 16, 32]
 __C.NCLASSES = 21
 
-# multiscale training and testing
-__C.IS_MULTISCALE = False
 __C.IS_EXTRAPOLATING = True
 
 __C.REGION_PROPOSAL = 'RPN'
@@ -46,6 +22,9 @@ __C.NET_NAME = 'VGGnet'
 __C.SUBCLS_NAME = 'voxel_exemplars'
 
 __C.TRAIN = edict()
+
+__C.TRAIN.MAX_ITER = 80000
+
 # Adam, Momentum, RMS
 __C.TRAIN.SOLVER = 'Momentum'
 # learning rate
@@ -56,7 +35,6 @@ __C.TRAIN.GAMMA = 0.1
 __C.TRAIN.STEPSIZE = 50000
 __C.TRAIN.DISPLAY = 10
 __C.TRAIN.LOG_IMAGE_ITERS = 100
-__C.TRAIN.OHEM = False
 __C.TRAIN.RANDOM_DOWNSAMPLE = False
 
 # Scales to compute real features
@@ -141,8 +119,6 @@ __C.TRAIN.ASPECT_GROUPING = True
 # preclude rois intersected with dontcare areas above the value
 __C.TRAIN.DONTCARE_AREA_INTERSECTION_HI = 0.5
 __C.TRAIN.PRECLUDE_HARD_SAMPLES = True
-# Use RPN to detect objects
-__C.TRAIN.HAS_RPN = True
 # IOU >= thresh: positive example
 __C.TRAIN.RPN_POSITIVE_OVERLAP = 0.7
 # IOU < thresh: negative example
@@ -321,25 +297,3 @@ def cfg_from_file(filename):
         yaml_cfg = edict(yaml.load(f))
 
     _merge_a_into_b(yaml_cfg, __C)
-
-def cfg_from_list(cfg_list):
-    """Set config keys via list (e.g., from command line)."""
-    from ast import literal_eval
-    assert len(cfg_list) % 2 == 0
-    for k, v in zip(cfg_list[0::2], cfg_list[1::2]):
-        key_list = k.split('.')
-        d = __C
-        for subkey in key_list[:-1]:
-            assert d.has_key(subkey)
-            d = d[subkey]
-        subkey = key_list[-1]
-        assert d.has_key(subkey)
-        try:
-            value = literal_eval(v)
-        except:
-            # handle the case when v is a string literal
-            value = v
-        assert type(value) == type(d[subkey]), \
-            'type {} does not match original type {}'.format(
-            type(value), type(d[subkey]))
-        d[subkey] = value

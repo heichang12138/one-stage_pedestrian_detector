@@ -1,21 +1,6 @@
-# --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
-# --------------------------------------------------------
-
-"""The data layer used during training to train a Fast R-CNN network.
-
-RoIDataLayer implements a Caffe Python layer.
-"""
-
 import numpy as np
 
-# TODO: make fast_rcnn irrelevant
-# >>>> obsolete, because it depends on sth outside of this project
 from ..fast_rcnn.config import cfg
-# <<<< obsolete
 from ..roi_data_layer.minibatch import get_minibatch
 
 class RoIDataLayer(object):
@@ -34,27 +19,12 @@ class RoIDataLayer(object):
 
     def _get_next_minibatch_inds(self):
         """Return the roidb indices for the next minibatch."""
-        
-        if cfg.TRAIN.HAS_RPN:
-            if self._cur + cfg.TRAIN.IMS_PER_BATCH >= len(self._roidb):
-                self._shuffle_roidb_inds()
 
-            db_inds = self._perm[self._cur:self._cur + cfg.TRAIN.IMS_PER_BATCH]
-            self._cur += cfg.TRAIN.IMS_PER_BATCH
-        else:
-            # sample images
-            db_inds = np.zeros((cfg.TRAIN.IMS_PER_BATCH), dtype=np.int32)
-            i = 0
-            while (i < cfg.TRAIN.IMS_PER_BATCH):
-                ind = self._perm[self._cur]
-                num_objs = self._roidb[ind]['boxes'].shape[0]
-                if num_objs != 0:
-                    db_inds[i] = ind
-                    i += 1
+        if self._cur + cfg.TRAIN.IMS_PER_BATCH >= len(self._roidb):
+            self._shuffle_roidb_inds()
 
-                self._cur += 1
-                if self._cur >= len(self._roidb):
-                    self._shuffle_roidb_inds()
+        db_inds = self._perm[self._cur:self._cur + cfg.TRAIN.IMS_PER_BATCH]
+        self._cur += cfg.TRAIN.IMS_PER_BATCH
 
         return db_inds
 

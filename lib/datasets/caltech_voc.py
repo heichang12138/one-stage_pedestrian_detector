@@ -6,15 +6,12 @@ Created on Wed Sep 20 11:34:48 2017
 @author: heichang
 """
 
-#
 from .imdb import imdb
 import os
 from ..fast_rcnn.config import cfg
 import cPickle
-import uuid
 import numpy as np
 import xml.etree.ElementTree as ET
-import scipy
 
 class caltech_voc(imdb):
     def __init__(self, image_set, devkit_path=None):
@@ -28,16 +25,6 @@ class caltech_voc(imdb):
         self._image_ext = '.jpg'
         self._image_index = self._load_image_set_index()
         self._roidb_handler = self.gt_roidb
-        self._salt = str(uuid.uuid4())
-        self._comp_id = 'comp4'
-
-        # PASCAL specific config options
-        self.config = {'cleanup'     : True,
-                       'use_salt'    : True,
-                       'use_diff'    : False,
-                       'matlab_eval' : False,
-                       'rpn_file'    : None,
-                       'min_size'    : 2}
 
         assert os.path.exists(self._devkit_path), \
                 'VOCdevkit path does not exist: {}'.format(self._devkit_path)
@@ -114,12 +101,7 @@ class caltech_voc(imdb):
 
         boxes = np.zeros((num_objs, 4), dtype=np.int32)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
-        # just the same as gt_classes
-        overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        # "Seg" area for pascal is just the box area
-        seg_areas = np.zeros((num_objs), dtype=np.float32)
 
-        ishards = np.zeros((num_objs), dtype=np.int32)
         care_inds = np.empty((0), dtype=np.int32)
         dontcare_inds = np.empty((0), dtype=np.int32)
 
@@ -132,10 +114,6 @@ class caltech_voc(imdb):
             x2 = float(bbox.find('xmax').text) - 1
             y2 = float(bbox.find('ymax').text) - 1
 
-            diffc = obj.find('difficult')
-            difficult = 0 if diffc == None else int(diffc.text)
-            ishards[ix] = difficult
-
             class_name = obj.find('name').text.lower().strip()
             if class_name != 'dontcare':
                 care_inds = np.append(care_inds, np.asarray([ix], dtype=np.int32))
@@ -146,23 +124,13 @@ class caltech_voc(imdb):
             cls = self._class_to_ind[class_name]
             boxes[ix, :] = [x1, y1, x2, y2]
             gt_classes[ix] = cls
-            overlaps[ix, cls] = 1.0
-            seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
 
         # deal with dontcare areas
         dontcare_areas = boxes[dontcare_inds, :]
         boxes = boxes[care_inds, :]
         gt_classes = gt_classes[care_inds]
-        overlaps = overlaps[care_inds, :]
-        seg_areas = seg_areas[care_inds]
-        ishards = ishards[care_inds]
-
-        overlaps = scipy.sparse.csr_matrix(overlaps)
 
         return {'boxes' : boxes,
                 'gt_classes': gt_classes,
-                'gt_ishard' : ishards,
                 'dontcare_areas' : dontcare_areas,
-                'gt_overlaps' : overlaps,
-                'flipped' : False,
-                'seg_areas' : seg_areas}
+                'flipped' : False}

@@ -1,29 +1,13 @@
-# --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
-# --------------------------------------------------------
-
-"""Train a Fast R-CNN network."""
 import numpy as np
 import os
 import tensorflow as tf
-from tensorflow.python.client import timeline
 import cv2
 
-from .nms_wrapper import nms_wrapper
 from ..roi_data_layer.layer import RoIDataLayer
 from ..utils.timer import Timer
-from ..gt_data_layer import roidb as gdl_roidb
 from ..roi_data_layer import roidb as rdl_roidb
-
-# >>>> obsolete, because it depends on sth outside of this project
 from ..fast_rcnn.config import cfg
 from ..fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv
-# <<<< obsolete
-
-_DEBUG = False
 
 class SolverWrapper(object):
     """A simple wrapper around Caffe's solver.
@@ -31,7 +15,8 @@ class SolverWrapper(object):
     use to unnormalize the learned bounding-box regression weights.
     """
 
-    def __init__(self, sess, network, imdb, roidb, output_dir, logdir, pretrained_model=None):
+    def __init__(self, sess, network, imdb, roidb,
+                 output_dir, logdir, pretrained_model=None):
         """Initialize the SolverWrapper."""
         self.net = network
         self.imdb = imdb
@@ -41,14 +26,13 @@ class SolverWrapper(object):
 
         print 'Computing bounding-box regression targets...'
         if cfg.TRAIN.BBOX_REG:
-            self.bbox_means, self.bbox_stds = rdl_roidb.add_bbox_regression_targets(roidb)
+            self.bbox_means, self.bbox_stds \
+                    = rdl_roidb.add_bbox_regression_targets(roidb)
         print 'done'
 
-        # For checkpoint
         self.saver = tf.train.Saver(max_to_keep=100)
-        self.writer = tf.summary.FileWriter(logdir=logdir,
-                                             graph=tf.get_default_graph(),
-                                             flush_secs=5)
+        self.writer = tf.summary.FileWriter(
+                logdir=logdir, graph=tf.get_default_graph(), flush_secs=5)
 
     def snapshot(self, sess, iter):
         """Take a snapshot of the network after unnormalizing the learned
@@ -88,40 +72,30 @@ class SolverWrapper(object):
             sess.run(biases.assign(orig_1))
 
     def build_image_summary(self):
-        """
-        A simple graph for write image summary
-        :return:
-        """
+        """A simple graph for write image summary"""
         log_image_data = tf.placeholder(tf.uint8, [None, None, 3])
         log_image_name = tf.placeholder(tf.string)
-        # import tensorflow.python.ops.gen_logging_ops as logging_ops
         from tensorflow.python.ops import gen_logging_ops
         from tensorflow.python.framework import ops as _ops
-        log_image = gen_logging_ops._image_summary(log_image_name, tf.expand_dims(log_image_data, 0), max_images=1)
+        log_image = gen_logging_ops._image_summary(
+            log_image_name, tf.expand_dims(log_image_data, 0), max_images=1)
         _ops.add_to_collection(_ops.GraphKeys.SUMMARIES, log_image)
-        # log_image = tf.summary.image(log_image_name, tf.expand_dims(log_image_data, 0), max_outputs=1)
         return log_image, log_image_data, log_image_name
 
 
     def train_model(self, sess, max_iters, restore=False):
-        """Network training loop."""
-
-        data_layer = get_data_layer(self.roidb, self.imdb.num_classes)
-
-        loss,rpn_cross_entropy, rpn_loss_box = \
-            self.net.build_loss(ohem=cfg.TRAIN.OHEM)
+        data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
+        loss, rpn_cross_entropy, rpn_loss_box = self.net.build_loss()
+        global_step = tf.Variable(0, trainable=False)
 
         # scalar summary
         tf.summary.scalar('rpn_rgs_loss', rpn_loss_box)
         tf.summary.scalar('rpn_cls_loss', rpn_cross_entropy)
         tf.summary.scalar('loss', loss)
         summary_op = tf.summary.merge_all()
-
         # image writer
         # NOTE: this image is independent to summary_op
-        log_image, log_image_data, log_image_name =\
-            self.build_image_summary()
-
+        log_image, log_image_data, log_image_name = self.build_image_summary()
         # optimizer
         if cfg.TRAIN.SOLVER == 'Adam':
             opt = tf.train.AdamOptimizer(cfg.TRAIN.LEARNING_RATE)
@@ -129,22 +103,11 @@ class SolverWrapper(object):
             opt = tf.train.RMSPropOptimizer(cfg.TRAIN.LEARNING_RATE)
         else:
             lr = tf.Variable(cfg.TRAIN.LEARNING_RATE, trainable=False)
-            # lr = tf.Variable(0.0, trainable=False)
             momentum = cfg.TRAIN.MOMENTUM
             opt = tf.train.MomentumOptimizer(lr, momentum)
-
-        global_step = tf.Variable(0, trainable=False)
-        with_clip = True
-        if with_clip:
-            tvars = tf.trainable_variables()
-            grads, norm = tf.clip_by_global_norm(tf.gradients(loss, tvars), 10.0)
-            train_op = opt.apply_gradients(zip(grads, tvars), global_step=global_step)
-        else:
-            vs_names = ['res3_5', 'Top-Down', 'RPN']
-            trainable_vars = []
-            for vs_name in vs_names:
-                trainable_vars.append(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, vs_name))
-            train_op = opt.minimize(loss, global_step=global_step, var_list=trainable_vars)
+        tvars = tf.trainable_variables()
+        grads, norm = tf.clip_by_global_norm(tf.gradients(loss, tvars), 10.0)
+        train_op = opt.apply_gradients(zip(grads, tvars), global_step=global_step)
             
         # intialize variables
         sess.run(tf.global_variables_initializer())
@@ -162,7 +125,6 @@ class SolverWrapper(object):
         # resuming a trainer
         if restore:
             try:
-#                ckpt = tf.train.get_checkpoint_state(self.output_dir)
                 ckpt = tf.train.get_checkpoint_state(self.pretrained_model)
                 print(self.output_dir)
                 print 'Restoring from {}...'.format(ckpt.model_checkpoint_path),
@@ -176,27 +138,19 @@ class SolverWrapper(object):
 
         last_snapshot_iter = -1
         timer = Timer()
-        # for iter in range(max_iters):
         for iter in range(restore_iter, max_iters):
             timer.tic()
-
             # learning rate
             if iter != 0 and iter % cfg.TRAIN.STEPSIZE == 0:
                 sess.run(tf.assign(lr, lr.eval() * cfg.TRAIN.GAMMA))
-                # sess.run(tf.assign(lr, 0.0))
-
             # get one batch
             blobs = data_layer.forward()
-
-            if (iter + 1) % (cfg.TRAIN.DISPLAY) == 0:
-                print 'image: %s\n' %(blobs['im_name']),
 
             feed_dict={
                 self.net.data: blobs['data'],
                 self.net.im_info: blobs['im_info'],
                 self.net.keep_prob: 0.5,
                 self.net.gt_boxes: blobs['gt_boxes'],
-                self.net.gt_ishard: blobs['gt_ishard'],
                 self.net.dontcare_areas: blobs['dontcare_areas']
             }
                 
@@ -222,7 +176,7 @@ class SolverWrapper(object):
                 # plus mean
                 ori_im = np.squeeze(blobs['data']) + cfg.PIXEL_MEANS
                 ori_im = ori_im.astype(dtype=np.uint8, copy=False)
-                ori_im = _draw_gt_to_image(ori_im, blobs['gt_boxes'], blobs['gt_ishard'])
+                ori_im = _draw_gt_to_image(ori_im, blobs['gt_boxes'])
                 ori_im = _draw_dontcare_to_image(ori_im, blobs['dontcare_areas'])
                 res = _wrapper(rois,threshold=0.5)
                 image = cv2.cvtColor(_draw_boxes_to_image(ori_im, res), cv2.COLOR_BGR2RGB)
@@ -269,34 +223,10 @@ def get_training_roidb(imdb):
         print 'done'
 
     print 'Preparing training data...'
-    if cfg.TRAIN.HAS_RPN:
-        if cfg.IS_MULTISCALE:
-            # TODO: fix multiscale training (single scale is already a good trade-off)
-            print ('#### warning: multi-scale has not been tested.')
-            print ('#### warning: using single scale by setting IS_MULTISCALE: False.')
-            gdl_roidb.prepare_roidb(imdb)
-        else:
-            rdl_roidb.prepare_roidb(imdb)
-    else:
-        rdl_roidb.prepare_roidb(imdb)
+    rdl_roidb.prepare_roidb(imdb)
     print 'done'
 
     return imdb.roidb
-
-
-def get_data_layer(roidb, num_classes):
-    """return a data layer."""
-    if cfg.TRAIN.HAS_RPN:
-        if cfg.IS_MULTISCALE:
-            # obsolete
-            # layer = GtDataLayer(roidb)
-            raise "Calling caffe modules..."
-        else:
-            layer = RoIDataLayer(roidb, num_classes)
-    else:
-        layer = RoIDataLayer(roidb, num_classes)
-
-    return layer
 
 def _process_boxes_scores(cls_prob, bbox_pred, rois, im_scale, im_shape):
     """
@@ -335,15 +265,12 @@ def _draw_boxes_to_image(im, res):
             cnt = (cnt + 1)
     return image
 
-def _draw_gt_to_image(im, gt_boxes, gt_ishard):
+def _draw_gt_to_image(im, gt_boxes):
     image = np.copy(im)
 
     for i in range(0, gt_boxes.shape[0]):
         (x1, y1, x2, y2, score) = gt_boxes[i, :]
-        if gt_ishard[i] == 0:
-            cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 255, 255), 2)
-        else:
-            cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)
+        cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)
     return image
 
 def _draw_dontcare_to_image(im, dontcare):
@@ -354,16 +281,14 @@ def _draw_dontcare_to_image(im, dontcare):
         cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
     return image
 
-
-
-def train_net(network, imdb, roidb, output_dir, log_dir, pretrained_model=None, max_iters=40000, restore=False):
-    """Train a Fast R-CNN network."""
-
+def train_net(network, imdb, roidb, output_dir, log_dir,
+              pretrained_model=None, restore=False):
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allocator_type = 'BFC'
     config.gpu_options.per_process_gpu_memory_fraction = 0.80
     with tf.Session(config=config) as sess:
-        sw = SolverWrapper(sess, network, imdb, roidb, output_dir, logdir= log_dir, pretrained_model=pretrained_model)
+        sw = SolverWrapper(sess, network, imdb, roidb,
+                           output_dir, log_dir, pretrained_model)
         print 'Solving...'
-        sw.train_model(sess, max_iters, restore=restore)
+        sw.train_model(sess, cfg.TRAIN.MAX_ITER, restore=restore)
         print 'done solving'

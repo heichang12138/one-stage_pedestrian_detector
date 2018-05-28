@@ -8,19 +8,14 @@ class VGGnet_train(Network):
         self.data = tf.placeholder(tf.float32, shape=[None, None, None, 3], name='data')
         self.im_info = tf.placeholder(tf.float32, shape=[None, 3], name='im_info')
         self.gt_boxes = tf.placeholder(tf.float32, shape=[None, 5], name='gt_boxes')
-        self.gt_ishard = tf.placeholder(tf.int32, shape=[None], name='gt_ishard')
         self.dontcare_areas = tf.placeholder(tf.float32, shape=[None, 4], name='dontcare_areas')
         self.keep_prob = tf.placeholder(tf.float32)
         self.layers = dict({'data':self.data, 'im_info':self.im_info, 'gt_boxes':self.gt_boxes,\
-                            'gt_ishard': self.gt_ishard, 'dontcare_areas': self.dontcare_areas})
+                            'dontcare_areas': self.dontcare_areas})
         self.trainable = trainable
         self.setup()
 
     def setup(self):
-
-        # n_classes = 21
-        n_classes = cfg.NCLASSES
-        # anchor_scales = [8, 16, 32]
         anchor_scales = cfg.ANCHOR_SCALES
         _feat_stride = [16, ]
 
@@ -55,7 +50,7 @@ class VGGnet_train(Network):
 
         # generating training labels on the fly
         # output: rpn_labels(HxWxA, 2) rpn_bbox_targets(HxWxA, 4) rpn_bbox_inside_weights rpn_bbox_outside_weights
-        (self.feed('rpn_cls_score', 'gt_boxes', 'gt_ishard', 'dontcare_areas', 'im_info')
+        (self.feed('rpn_cls_score', 'gt_boxes', 'dontcare_areas', 'im_info')
              .anchor_target_layer(_feat_stride, anchor_scales, name = 'rpn-data' ))
 
         # shape is (1, H, W, Ax2) -> (1, H, WxA, 2)
@@ -73,21 +68,3 @@ class VGGnet_train(Network):
         # rpn_rois <- (1 x H x W x A, 5) e.g. [0, x1, y1, x2, y2]
         (self.feed('rpn_cls_prob_reshape','rpn_bbox_pred','im_info')
              .proposal_layer(_feat_stride, anchor_scales, 'TRAIN', name = 'rpn_rois'))
-
-#        # matching boxes and groundtruth,
-#        # and randomly sample some rois and labels for RCNN
-#        (self.feed('rpn_rois','gt_boxes', 'gt_ishard', 'dontcare_areas')
-#             .proposal_target_layer(n_classes,name = 'roi-data'))
-#
-#        #========= RCNN ============        
-#        (self.feed('conv3_3', 'rois')
-#             .roi_pool(7, 7, 1.0/16, name='pool_5')
-#             .fc(4096, name='fc6', trainable=False)
-#             .dropout(0.5, name='drop6')
-#             .fc(4096, name='fc7', trainable=False)
-#             .dropout(0.5, name='drop7')
-#             .fc(n_classes, relu=False, name='cls_score', trainable=False)
-#             .softmax(name='cls_prob'))
-#
-#        (self.feed('drop7')
-#             .fc(n_classes*4, relu=False, name='bbox_pred', trainable=False))
