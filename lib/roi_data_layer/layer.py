@@ -30,9 +30,6 @@ class RoIDataLayer(object):
 
     def _get_next_minibatch(self):
         """Return the blobs to be used for the next minibatch.
-
-        If cfg.TRAIN.USE_PREFETCH is True, then blobs will be computed in a
-        separate process and made available through self._blob_queue.
         """
         db_inds = self._get_next_minibatch_inds()
         minibatch_db = [self._roidb[i] for i in db_inds]

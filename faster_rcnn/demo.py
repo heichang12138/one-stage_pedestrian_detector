@@ -108,8 +108,6 @@ def parse_args():
 
 
 if __name__ == '__main__':
-    cfg.TEST.HAS_RPN = True  # Use RPN for proposals
-
     args = parse_args()
     args.demo_net = 'Resnet50_test'
     args.cfg_file = '/home/heichang/code/TFFRCNN/experiments/cfgs/faster_rcnn_caltech_basic.yml'

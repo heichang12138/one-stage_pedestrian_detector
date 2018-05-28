@@ -1,19 +1,15 @@
-import argparse
 import numpy as np
 import cv2
 import cPickle
-import heapq
 import os
-import math
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from .config import cfg, get_output_dir
 
 from ..utils.timer import Timer
-from ..utils.cython_nms import nms, nms_new
+from ..utils.cython_nms import nms
 from ..utils.blob import im_list_to_blob
-from ..utils.boxes_grid import get_boxes_grid
 
 from ..fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv
 
@@ -93,13 +89,8 @@ def _project_im_rois(im_rois, scales):
 
 def _get_blobs(im, rois):
     """Convert an image and RoIs within that image into network inputs."""
-    if cfg.TEST.HAS_RPN:
-        blobs = {'data' : None, 'rois' : None}
-        blobs['data'], im_scale_factors = _get_image_blob(im)
-    else:
-        blobs = {'data' : None, 'rois' : None}
-        blobs['data'], im_scale_factors = _get_image_blob(im)
-        blobs['rois'] = _get_rois_blob(rois, cfg.TEST.SCALES_BASE)
+    blobs = {'data' : None, 'rois' : None}
+    blobs['data'], im_scale_factors = _get_image_blob(im)
 
     return blobs, im_scale_factors
 
@@ -139,45 +130,19 @@ def im_detect(sess, net, im, boxes=None):
 
     blobs, im_scales = _get_blobs(im, boxes)
 
-    # When mapping from image ROIs to feature map ROIs, there's some aliasing
-    # (some distinct image ROIs get mapped to the same feature ROI).
-    # Here, we identify duplicate feature ROIs, so we only compute features
-    # on the unique subset.
-    if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
-        v = np.array([1, 1e3, 1e6, 1e9, 1e12])
-        hashes = np.round(blobs['rois'] * cfg.DEDUP_BOXES).dot(v)
-        _, index, inv_index = np.unique(hashes, return_index=True,
-                                        return_inverse=True)
-        blobs['rois'] = blobs['rois'][index, :]
-        boxes = boxes[index, :]
-
-    if cfg.TEST.HAS_RPN:
-        im_blob = blobs['data']
-        blobs['im_info'] = np.array(
-            [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
-            dtype=np.float32)
-    # forward pass
-    if cfg.TEST.HAS_RPN:
-        feed_dict={net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
-    else:
-        feed_dict={net.data: blobs['data'], net.rois: blobs['rois'], net.keep_prob: 1.0}
+    im_blob = blobs['data']
+    blobs['im_info'] = np.array(
+        [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
+        dtype=np.float32)
+    feed_dict={net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
 
     cls_score, cls_prob, bbox_pred, rois = \
         sess.run([net.get_output('rpn_cls_score'), net.get_output('rpn_cls_prob'), net.get_output('rpn_bbox_pred'),net.get_output('rpn_rois')],\
                  feed_dict=feed_dict)
-    
-    if cfg.TEST.HAS_RPN:
-        assert len(im_scales) == 1, "Only single-image batch implemented"
-        boxes = rois[:, 1:5] / im_scales[0]
 
-
-    if cfg.TEST.SVM:
-        # use the raw scores before softmax under the assumption they
-        # were trained as linear SVMs
-        scores = cls_score
-    else:
-        # use softmax estimated probabilities
-        scores = cls_prob
+    assert len(im_scales) == 1, "Only single-image batch implemented"
+    boxes = rois[:, 1:5] / im_scales[0]
+    scores = cls_prob
 
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
@@ -188,22 +153,15 @@ def im_detect(sess, net, im, boxes=None):
         # Simply repeat the boxes, once for each class
         pred_boxes = np.tile(boxes, (1, scores.shape[1]))
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
-        # Map scores and predictions back to the original set of boxes
-        scores = scores[inv_index, :]
-        pred_boxes = pred_boxes[inv_index, :]
-
     return scores, pred_boxes
 
 def im_detect_rpn(sess, net, im, boxes=None):
     blobs, im_scales = _get_blobs(im, boxes)
-    if cfg.TEST.HAS_RPN:
-        im_blob = blobs['data']
-        blobs['im_info'] = np.array(
-            [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
-            dtype=np.float32)
-    if cfg.TEST.HAS_RPN:
-        feed_dict={net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
+    im_blob = blobs['data']
+    blobs['im_info'] = np.array(
+        [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
+        dtype=np.float32)
+    feed_dict={net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
     rois = sess.run(net.get_output('rois'), feed_dict=feed_dict)
     boxes = rois[:,:4]/im_scales[0]
     scores = rois[:,-1]
@@ -280,9 +238,6 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
     # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
 
-    if not cfg.TEST.HAS_RPN:
-        roidb = imdb.roidb
-
     det_file = os.path.join(output_dir, 'detections.pkl')
     # if os.path.exists(det_file):
     #     with open(det_file, 'rb') as f:
@@ -290,16 +245,7 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
 
     for i in xrange(num_images):
         # filter out any ground truth boxes
-        if cfg.TEST.HAS_RPN:
-            box_proposals = None
-        else:
-            # The roidb may contain ground-truth rois (for example, if the roidb
-            # comes from the training or val split). We only want to evaluate
-            # detection on the *non*-ground-truth rois. We select those the rois
-            # that have the gt_classes field set to 0, which means there's no
-            # ground truth.
-            box_proposals = roidb[i]['boxes'][roidb[i]['gt_classes'] == 0]
-
+        box_proposals = None
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
         scores, boxes = im_detect_rpn(sess, net, im, box_proposals)
@@ -328,7 +274,7 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
             cls_boxes = boxes[inds, j*4:(j+1)*4]
             cls_dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
                 .astype(np.float32, copy=False)
-            keep = nms(cls_dets, cfg.TEST.NMS)
+            keep = nms(cls_dets, cfg.TEST.RPN_NMS_THRESH)
             cls_dets = cls_dets[keep, :]
             if vis:
                 vis_detections(image, imdb.classes[j], cls_dets)
@@ -352,7 +298,3 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
 
     with open(det_file, 'wb') as f:
         cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)
-
-    print 'Evaluating detections'
-#    imdb.evaluate_detections(all_boxes, output_dir)
-

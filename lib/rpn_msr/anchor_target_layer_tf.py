@@ -97,18 +97,12 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
                                np.arange(overlaps.shape[1])]
     gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
 
-    if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-        # assign bg labels first so that positive labels can clobber them
-        labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
+    labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
     # fg label: for each gt, anchor with highest overlap
     labels[gt_argmax_overlaps] = 1
     # fg label: above threshold IOU
     labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
-
-    if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
-        # assign bg labels last so that negative labels can clobber positives
-        labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
     # preclude dontcare areas
     if dontcare_areas is not None and dontcare_areas.shape[0] > 0:
