@@ -1,2 +1,7 @@
 # Python:
 *.py[cod]
+
+data
+debug
+logs
+output
