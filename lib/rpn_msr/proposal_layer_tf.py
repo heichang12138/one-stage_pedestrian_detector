@@ -1,28 +1,10 @@
-# --------------------------------------------------------
-# Faster R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick and Sean Bell
-# --------------------------------------------------------
-
 import numpy as np
-import yaml
 
 from .generate_anchors import generate_anchors
-
-# TODO: make fast_rcnn irrelevant
-# >>>> obsolete, because it depends on sth outside of this project
 from ..fast_rcnn.config import cfg
 from ..fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
 from ..fast_rcnn.nms_wrapper import nms
-# <<<< obsolete
 
-
-DEBUG = False
-"""
-Outputs object detection proposals by applying estimated bounding-box
-transformations to a set of regular boxes (called "anchors").
-"""
 def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_stride = [16,], anchor_scales = [8, 16, 32]):
     """
     Parameters
@@ -56,17 +38,12 @@ def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_
     """
     _anchors = generate_anchors(scales=np.array(anchor_scales))
     _num_anchors = _anchors.shape[0]
-    # rpn_cls_prob_reshape = np.transpose(rpn_cls_prob_reshape,[0,3,1,2]) #-> (1 , 2xA, H , W)
-    # rpn_bbox_pred = np.transpose(rpn_bbox_pred,[0,3,1,2])              # -> (1 , Ax4, H , W)
 
-    #rpn_cls_prob_reshape = np.transpose(np.reshape(rpn_cls_prob_reshape,[1,rpn_cls_prob_reshape.shape[0],rpn_cls_prob_reshape.shape[1],rpn_cls_prob_reshape.shape[2]]),[0,3,2,1])
-    #rpn_bbox_pred = np.transpose(rpn_bbox_pred,[0,3,2,1])
     im_info = im_info[0]
 
     assert rpn_cls_prob_reshape.shape[0] == 1, \
         'Only single item batches are supported'
-    # cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
-    #cfg_key = 'TEST'
+
     pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
     post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
     nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
@@ -80,20 +57,7 @@ def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_
     scores = np.reshape(np.reshape(rpn_cls_prob_reshape, [1, height, width, _num_anchors, 2])[:,:,:,:,1],
                         [1, height, width, _num_anchors])
 
-    # TODO: NOTICE: the old version is ordered by (1, H, W, 2, A) !!!!
-    # TODO: if you use the old trained model, VGGnet_fast_rcnn_iter_70000.ckpt, uncomment this line
-    # scores = rpn_cls_prob_reshape[:,:,:,_num_anchors:]
-
     bbox_deltas = rpn_bbox_pred
-    #im_info = bottom[2].data[0, :]
-
-    if DEBUG:
-        print 'im_size: ({}, {})'.format(im_info[0], im_info[1])
-        print 'scale: {}'.format(im_info[2])
-
-    # 1. Generate proposals from bbox deltas and shifted anchors
-    if DEBUG:
-        print 'score map size: {}'.format(scores.shape)
 
     # Enumerate all shifts
     shift_x = np.arange(0, width) * _feat_stride
@@ -142,11 +106,6 @@ def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_
     proposals = proposals[keep, :]
     scores = scores[keep]
 
-    # # remove irregular boxes, too fat too tall
-    # keep = _filter_irregular_boxes(proposals)
-    # proposals = proposals[keep, :]
-    # scores = scores[keep]
-
     # 4. sort all (proposal, score) pairs by score from highest to lowest
     # 5. take top pre_nms_topN (e.g. 6000)
     order = scores.ravel().argsort()[::-1]
@@ -166,29 +125,14 @@ def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all
     # batch inds are 0
-    batch_inds = np.zeros((proposals.shape[0], 1), dtype=np.float32)
+#    batch_inds = np.zeros((proposals.shape[0], 1), dtype=np.float32)
 #    blob = np.hstack((batch_inds, proposals.astype(np.float32, copy=False)))
     blob = np.hstack((proposals.astype(np.float32, copy=False),scores))
     return blob
-    #top[0].reshape(*(blob.shape))
-    #top[0].data[...] = blob
-
-    # [Optional] output scores blob
-    #if len(top) > 1:
-    #    top[1].reshape(*(scores.shape))
-    #    top[1].data[...] = scores
 
 def _filter_boxes(boxes, min_size):
     """Remove all boxes with any side smaller than min_size."""
     ws = boxes[:, 2] - boxes[:, 0] + 1
     hs = boxes[:, 3] - boxes[:, 1] + 1
     keep = np.where((ws >= min_size) & (hs >= min_size))[0]
-    return keep
-
-def _filter_irregular_boxes(boxes, min_ratio = 0.2, max_ratio = 5):
-    """Remove all boxes with any side smaller than min_size."""
-    ws = boxes[:, 2] - boxes[:, 0] + 1
-    hs = boxes[:, 3] - boxes[:, 1] + 1
-    rs = ws / hs
-    keep = np.where((rs <= max_ratio) & (rs >= min_ratio))[0]
     return keep

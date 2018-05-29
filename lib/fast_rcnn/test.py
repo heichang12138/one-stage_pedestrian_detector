@@ -2,16 +2,13 @@ import numpy as np
 import cv2
 import cPickle
 import os
-import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from .config import cfg, get_output_dir
-
 from ..utils.timer import Timer
 from ..utils.cython_nms import nms
 from ..utils.blob import im_list_to_blob
-
-from ..fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv
+from ..fast_rcnn.bbox_transform import bbox_transform_inv
 
 
 def _get_image_blob(im):
@@ -47,45 +44,6 @@ def _get_image_blob(im):
     blob = im_list_to_blob(processed_ims)
 
     return blob, np.array(im_scale_factors)
-
-def _get_rois_blob(im_rois, im_scale_factors):
-    """Converts RoIs into network inputs.
-    Arguments:
-        im_rois (ndarray): R x 4 matrix of RoIs in original image coordinates
-        im_scale_factors (list): scale factors as returned by _get_image_blob
-    Returns:
-        blob (ndarray): R x 5 matrix of RoIs in the image pyramid
-    """
-    rois, levels = _project_im_rois(im_rois, im_scale_factors)
-    rois_blob = np.hstack((levels, rois))
-    return rois_blob.astype(np.float32, copy=False)
-
-def _project_im_rois(im_rois, scales):
-    """Project image RoIs into the image pyramid built by _get_image_blob.
-    Arguments:
-        im_rois (ndarray): R x 4 matrix of RoIs in original image coordinates
-        scales (list): scale factors as returned by _get_image_blob
-    Returns:
-        rois (ndarray): R x 4 matrix of projected RoI coordinates
-        levels (list): image pyramid levels used by each projected RoI
-    """
-    im_rois = im_rois.astype(np.float, copy=False)
-    scales = np.array(scales)
-
-    if len(scales) > 1:
-        widths = im_rois[:, 2] - im_rois[:, 0] + 1
-        heights = im_rois[:, 3] - im_rois[:, 1] + 1
-
-        areas = widths * heights
-        scaled_areas = areas[:, np.newaxis] * (scales[np.newaxis, :] ** 2)
-        diff_areas = np.abs(scaled_areas - 224 * 224)
-        levels = diff_areas.argmin(axis=1)[:, np.newaxis]
-    else:
-        levels = np.zeros((im_rois.shape[0], 1), dtype=np.int)
-
-    rois = im_rois * scales[levels]
-
-    return rois, levels
 
 def _get_blobs(im, rois):
     """Convert an image and RoIs within that image into network inputs."""
@@ -173,13 +131,10 @@ def im_detect_rpn(sess, net, im, boxes=None):
 def vis_detections(im, class_name, dets, thresh=0.05):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt 
-    #im = im[:, :, (2, 1, 0)]
     for i in xrange(np.minimum(10, dets.shape[0])):
         bbox = dets[i, :4] 
         score = dets[i, -1] 
         if score > thresh:
-            #plt.cla()
-            #plt.imshow(im)
             plt.gca().add_patch(
                 plt.Rectangle((bbox[0], bbox[1]),
                               bbox[2] - bbox[0],
@@ -192,41 +147,8 @@ def vis_detections(im, class_name, dets, thresh=0.05):
                  fontsize=14, color='white')
 
             plt.title('{}  {:.3f}'.format(class_name, score))
-    #plt.show()
-
-def apply_nms(all_boxes, thresh):
-    """Apply non-maximum suppression to all predicted boxes output by the
-    test_net method.
-    """
-    num_classes = len(all_boxes)
-    num_images = len(all_boxes[0])
-    nms_boxes = [[[] for _ in xrange(num_images)]
-                 for _ in xrange(num_classes)]
-    for cls_ind in xrange(num_classes):
-        for im_ind in xrange(num_images):
-            dets = all_boxes[cls_ind][im_ind]
-            if dets == []:
-                continue
-
-            x1 = dets[:, 0]
-            y1 = dets[:, 1]
-            x2 = dets[:, 2]
-            y2 = dets[:, 3]
-            scores = dets[:, 4]
-            inds = np.where((x2 > x1) & (y2 > y1) & (scores > cfg.TEST.DET_THRESHOLD))[0]
-            dets = dets[inds,:]
-            if dets == []:
-                continue
-
-            keep = nms(dets, thresh)
-            if len(keep) == 0:
-                continue
-            nms_boxes[cls_ind][im_ind] = dets[keep, :].copy()
-    return nms_boxes
-
 
 def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05, vis=False):
-    """Test a Fast R-CNN network on an image database."""
     num_images = len(imdb.image_index)
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in
@@ -239,9 +161,6 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
 
     det_file = os.path.join(output_dir, 'detections.pkl')
-    # if os.path.exists(det_file):
-    #     with open(det_file, 'rb') as f:
-    #         all_boxes = cPickle.load(f)
 
     for i in xrange(num_images):
         # filter out any ground truth boxes
@@ -249,16 +168,7 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
         scores, boxes = im_detect_rpn(sess, net, im, box_proposals)
-        # -----discard bound-cross-------------
-        x1 = boxes[:,0]
-        y1 = boxes[:,1]
-        x2 = boxes[:,2]
-        y2 = boxes[:,3]
-        idx = np.logical_not(np.logical_or(np.logical_or(x1<1,x2>639),
-                                           np.logical_or(y1<1,y2>479)))
-        boxes = boxes[idx]
-        scores = scores[idx]
-        # ------------------------------------
+
         detect_time = _t['im_detect'].toc(average=False)
 
         _t['misc'].tic()
