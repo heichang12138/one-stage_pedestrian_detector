@@ -121,6 +121,35 @@ class Network(object):
                 return conv
 
     @layer
+    def final_conv(self, input, k_h, k_w, c_o, s_h, s_w, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
+        """ contribution by miraclebiu, and biased option"""
+        self.validate_padding(padding)
+        c_i = input.get_shape()[-1]
+        convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
+        with tf.variable_scope(name):
+
+            # init_weights = tf.truncated_normal_initializer(0.0, stddev=0.001)
+            init_weights = tf.contrib.layers.variance_scaling_initializer(factor=0.01, mode='FAN_AVG', uniform=False)
+            # specific initialization following focal loss
+            pi = cfg.RETINA.PI
+            init_biases = tf.constant_initializer( (-1)*np.log((1-pi)/pi) )
+
+            kernel = self.make_var('weights', [k_h, k_w, c_i, c_o], init_weights, trainable, \
+                                   regularizer=self.l2_regularizer(cfg.TRAIN.WEIGHT_DECAY))
+            if biased:
+                biases = self.make_var('biases', [c_o], init_biases, trainable)
+                conv = convolve(input, kernel)
+                if relu:
+                    bias = tf.nn.bias_add(conv, biases)
+                    return tf.nn.relu(bias)
+                return tf.nn.bias_add(conv, biases)
+            else:
+                conv = convolve(input, kernel)
+                if relu:
+                    return tf.nn.relu(conv)
+                return conv
+
+    @layer
     def upconv(self, input, shape, c_o, ksize=4, stride = 2, name = 'upconv', biased=False, relu=True, padding=DEFAULT_PADDING,
              trainable=True):
         """ up-conv"""
@@ -302,6 +331,13 @@ class Network(object):
             return tf.nn.softmax(input,name=name)
 
     @layer
+    def spatial_sigmoid(self, input, name):
+        input_shape = tf.shape(input)
+        # d = input.get_shape()[-1]
+        return tf.reshape(tf.nn.sigmoid(tf.reshape(input, [-1, input_shape[3]])),
+                          [-1, input_shape[1], input_shape[2], input_shape[3]], name=name)
+
+    @layer
     def spatial_softmax(self, input, name):
         input_shape = tf.shape(input)
         # d = input.get_shape()[-1]
@@ -384,6 +420,53 @@ class Network(object):
             rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])
 
         rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
+
+        loss = rpn_cross_entropy + rpn_loss_box
+
+        # add regularizer
+        if cfg.TRAIN.WEIGHT_DECAY > 0:
+            regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+            loss = tf.add_n(regularization_losses) + loss
+
+        return loss, rpn_cross_entropy, rpn_loss_box
+
+    def build_focal_loss(self):
+        gamma = cfg.RETINA.GAMMA
+        alpha = cfg.RETINA.ALPHA
+        epsilon = cfg.RETINA.EPSILON
+
+        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
+        fg_keep = tf.equal(rpn_label, 1)
+        rpn_keep = tf.not_equal(rpn_label, -1)
+        fg_keep_inds = tf.where(fg_keep)
+        rpn_keep_inds = tf.where(rpn_keep)
+
+        rpn_label = tf.squeeze(tf.gather(rpn_label, rpn_keep_inds))
+        rpn_label = tf.cast(rpn_label, tf.bool)
+        num_gt_anchor = tf.reduce_sum(tf.cast(fg_keep,tf.float32))
+
+        rpn_cls_prob = tf.reshape(self.get_output('rpn_cls_prob_reshape'), [-1, 2])
+        rpn_cls_prob = tf.reshape(tf.gather(rpn_cls_prob, rpn_keep_inds),[-1,2])
+        fg_prob = rpn_cls_prob[:,1]
+        pt = tf.where(rpn_label, fg_prob, 1-fg_prob)
+        alpha_tf = tf.scalar_mul(alpha,tf.ones_like(pt))
+        at = tf.where(rpn_label,alpha_tf, 1-alpha_tf)
+
+        rpn_cross_entropy_n = (-1) * at * tf.pow(1-pt, gamma) * tf.log(pt)
+        rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n)/(num_gt_anchor+epsilon)
+
+        rpn_bbox_pred = self.get_output('rpn_bbox_pred')
+        rpn_bbox_targets = self.get_output('rpn-data')[1]
+        rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
+        rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
+        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), fg_keep_inds), [-1, 4])
+        rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), fg_keep_inds), [-1, 4])
+        rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), fg_keep_inds), [-1, 4])
+        rpn_bbox_outside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), fg_keep_inds), [-1, 4])
+
+        rpn_loss_box_n = tf.reduce_sum(self.smooth_l1_dist(
+            rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])
+        rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) /(num_gt_anchor+epsilon)
 
         loss = rpn_cross_entropy + rpn_loss_box
 

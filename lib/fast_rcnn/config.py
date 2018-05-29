@@ -116,6 +116,15 @@ __C.TEST.RPN_POST_NMS_TOP_N = 300
 # Proposal height and width both need to be greater than RPN_MIN_SIZE (at orig image scale)
 __C.TEST.RPN_MIN_SIZE = 16
 
+# -------------------RETINA-----------------------------
+__C.RETINA = edict()
+
+__C.RETINA.RETINA_ON = False
+__C.RETINA.PI = 0.01
+__C.RETINA.GAMMA = 2
+__C.RETINA.ALPHA = 0.25
+__C.RETINA.EPSILON = 1
+
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.
     If the directory does not exist, it is created.

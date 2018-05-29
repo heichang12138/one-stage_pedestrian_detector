@@ -33,8 +33,6 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
 
     # allow boxes to sit over the edge by a small amount
     _allowed_border =  0
-    # map of shape (..., H, W)
-    #height, width = rpn_cls_score.shape[1:3]
 
     im_info = im_info[0]
 
@@ -49,7 +47,6 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
     assert rpn_cls_score.shape[0] == 1, \
         'Only single item batches are supported'
 
-    # map of shape (..., H, W)
     height, width = rpn_cls_score.shape[1:3]
 
     # 1. Generate proposals from bbox deltas and shifted anchors
@@ -114,23 +111,22 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
         intersecs_ = intersecs.sum(axis=0) # A x 1
         labels[intersecs_ > cfg.TRAIN.DONTCARE_AREA_INTERSECTION_HI] = -1
 
-    # subsample positive labels if we have too many
-    num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)
-    fg_inds = np.where(labels == 1)[0]
-    if len(fg_inds) > num_fg:
-        disable_inds = npr.choice(
-            fg_inds, size=(len(fg_inds) - num_fg), replace=False)
-        labels[disable_inds] = -1
+    if not cfg.RETINA.RETINA_ON:
+        # subsample positive labels if we have too many
+        num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)
+        fg_inds = np.where(labels == 1)[0]
+        if len(fg_inds) > num_fg:
+            disable_inds = npr.choice(
+                fg_inds, size=(len(fg_inds) - num_fg), replace=False)
+            labels[disable_inds] = -1
 
-    # subsample negative labels if we have too many
-    num_bg = cfg.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1)
-    bg_inds = np.where(labels == 0)[0]
-    if len(bg_inds) > num_bg:
-        disable_inds = npr.choice(
-            bg_inds, size=(len(bg_inds) - num_bg), replace=False)
-        labels[disable_inds] = -1
-        #print "was %s inds, disabling %s, now %s inds" % (
-            #len(bg_inds), len(disable_inds), np.sum(labels == 0))
+        # subsample negative labels if we have too many
+        num_bg = cfg.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1)
+        bg_inds = np.where(labels == 0)[0]
+        if len(bg_inds) > num_bg:
+            disable_inds = npr.choice(
+                bg_inds, size=(len(bg_inds) - num_bg), replace=False)
+            labels[disable_inds] = -1
 
     bbox_targets = np.zeros((len(inds_inside), 4), dtype=np.float32)
     bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
@@ -165,31 +161,17 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
     # labels
     labels = labels.reshape((1, height, width, A))
     rpn_labels = labels
-
     # bbox_targets
-    bbox_targets = bbox_targets \
-        .reshape((1, height, width, A * 4))
-
+    bbox_targets = bbox_targets.reshape((1, height, width, A * 4))
     rpn_bbox_targets = bbox_targets
     # bbox_inside_weights
-    bbox_inside_weights = bbox_inside_weights \
-        .reshape((1, height, width, A * 4))
-    #assert bbox_inside_weights.shape[2] == height
-    #assert bbox_inside_weights.shape[3] == width
-
+    bbox_inside_weights = bbox_inside_weights.reshape((1, height, width, A * 4))
     rpn_bbox_inside_weights = bbox_inside_weights
-
     # bbox_outside_weights
-    bbox_outside_weights = bbox_outside_weights \
-        .reshape((1, height, width, A * 4))
-    #assert bbox_outside_weights.shape[2] == height
-    #assert bbox_outside_weights.shape[3] == width
-
+    bbox_outside_weights = bbox_outside_weights.reshape((1, height, width, A * 4))
     rpn_bbox_outside_weights = bbox_outside_weights
 
     return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
-
-
 
 def _unmap(data, count, inds, fill=0):
     """ Unmap a subset of item (data) back to the original set of items (of
@@ -203,7 +185,6 @@ def _unmap(data, count, inds, fill=0):
         ret.fill(fill)
         ret[inds, :] = data
     return ret
-
 
 def _compute_targets(ex_rois, gt_rois):
     """Compute bounding-box regression targets for an image."""
