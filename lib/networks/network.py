@@ -121,6 +121,32 @@ class Network(object):
                 return conv
 
     @layer
+    def atrous_conv(self, input, k_h, k_w, c_o, rate, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
+        """ contribution by miraclebiu, and biased option"""
+        self.validate_padding(padding)
+        c_i = input.get_shape()[-1]
+        convolve = lambda i, k: tf.nn.atrous_conv2d(i, k, rate, padding=padding)
+        with tf.variable_scope(name):
+
+            # init_weights = tf.truncated_normal_initializer(0.0, stddev=0.001)
+            init_weights = tf.contrib.layers.variance_scaling_initializer(factor=0.01, mode='FAN_AVG', uniform=False)
+            init_biases = tf.constant_initializer(0.0)
+            kernel = self.make_var('weights', [k_h, k_w, c_i, c_o], init_weights, trainable, \
+                                   regularizer=self.l2_regularizer(cfg.TRAIN.WEIGHT_DECAY))
+            if biased:
+                biases = self.make_var('biases', [c_o], init_biases, trainable)
+                conv = convolve(input, kernel)
+                if relu:
+                    bias = tf.nn.bias_add(conv, biases)
+                    return tf.nn.relu(bias)
+                return tf.nn.bias_add(conv, biases)
+            else:
+                conv = convolve(input, kernel)
+                if relu:
+                    return tf.nn.relu(conv)
+                return conv
+
+    @layer
     def final_conv(self, input, k_h, k_w, c_o, s_h, s_w, name, biased=True,relu=True, padding=DEFAULT_PADDING, trainable=True):
         """ contribution by miraclebiu, and biased option"""
         self.validate_padding(padding)
