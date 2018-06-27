@@ -14,9 +14,6 @@ class VGGnet_test(Network):
         self.setup()
 
     def setup(self):
-        # n_classes = 21
-        n_classes = cfg.NCLASSES
-        # anchor_scales = [8, 16, 32]
         anchor_scales = cfg.ANCHOR_SCALES
         _feat_stride = [16, ]
 
@@ -39,32 +36,18 @@ class VGGnet_test(Network):
          .conv(3, 3, 512, 1, 1, name='conv5_2')
          .conv(3, 3, 512, 1, 1, name='conv5_3'))
 
-        (self.feed('conv5_3')#3
-         .conv(3, 3, 512, 1, 1, name='rpn_conv/3x3')
-         .conv(1, 1, len(anchor_scales) * 1 * 2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score'))
+        (self.feed('conv5_3')
+         .conv(3, 3, 512, 1, 1, name='rpn_conv/3x3'))
 
-        (self.feed('rpn_conv/3x3')#3
-         .conv(1, 1, len(anchor_scales) * 1 * 4, 1, 1, padding='VALID', relu=False, name='rpn_bbox_pred'))
-
-        #  shape is (1, H, W, Ax2) -> (1, H, WxA, 2)
-        (self.feed('rpn_cls_score')
+        (self.feed('rpn_conv/3x3')
+         .final_conv(1, 1, len(anchor_scales)*2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score')
          .spatial_reshape_layer(2, name='rpn_cls_score_reshape')
-         .spatial_softmax(name='rpn_cls_prob'))
+         .spatial_softmax(name='rpn_cls_prob')
+         .spatial_reshape_layer(len(anchor_scales)*2, name='rpn_cls_prob_reshape'))
 
-        # shape is (1, H, WxA, 2) -> (1, H, W, Ax2)
-        (self.feed('rpn_cls_prob')#3
-         .spatial_reshape_layer(len(anchor_scales) * 1 * 2, name='rpn_cls_prob_reshape'))
+        (self.feed('rpn_conv/3x3')
+         .conv(1, 1, len(anchor_scales)*4, 1, 1, padding='VALID', relu=False, name='rpn_bbox_pred'))
 
         (self.feed('rpn_cls_prob_reshape', 'rpn_bbox_pred', 'im_info')
          .proposal_layer(_feat_stride, anchor_scales, 'TEST', name='rois'))
-
-#        (self.feed('conv5_3', 'rois')
-#         .roi_pool(7, 7, 1.0 / 16, name='pool_5'))
-#         .fc(4096, name='fc6')
-#         .fc(4096, name='fc7')
-#         .fc(n_classes, relu=False, name='cls_score')
-#         .softmax(name='cls_prob'))
-#
-#        (self.feed('fc7')
-#         .fc(n_classes * 4, relu=False, name='bbox_pred'))
 

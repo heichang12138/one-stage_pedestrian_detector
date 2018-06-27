@@ -96,11 +96,6 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
 
     labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
-    # fg label: for each gt, anchor with highest overlap
-    labels[gt_argmax_overlaps] = 1
-    # fg label: above threshold IOU
-    labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
-
     # preclude dontcare areas
     if dontcare_areas is not None and dontcare_areas.shape[0] > 0:
         # intersec shape is D x A
@@ -110,6 +105,11 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
         )
         intersecs_ = intersecs.sum(axis=0) # A x 1
         labels[intersecs_ > cfg.TRAIN.DONTCARE_AREA_INTERSECTION_HI] = -1
+
+    # fg label: for each gt, anchor with highest overlap
+    labels[gt_argmax_overlaps] = 1
+    # fg label: above threshold IOU
+    labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
 
     if not cfg.RETINA.RETINA_ON:
         # subsample positive labels if we have too many
@@ -158,18 +158,10 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
     bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, fill=0)
     bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, fill=0)
 
-    # labels
-    labels = labels.reshape((1, height, width, A))
-    rpn_labels = labels
-    # bbox_targets
-    bbox_targets = bbox_targets.reshape((1, height, width, A * 4))
-    rpn_bbox_targets = bbox_targets
-    # bbox_inside_weights
-    bbox_inside_weights = bbox_inside_weights.reshape((1, height, width, A * 4))
-    rpn_bbox_inside_weights = bbox_inside_weights
-    # bbox_outside_weights
-    bbox_outside_weights = bbox_outside_weights.reshape((1, height, width, A * 4))
-    rpn_bbox_outside_weights = bbox_outside_weights
+    rpn_labels = labels.reshape((1, height, width, A))
+    rpn_bbox_targets = bbox_targets.reshape((1, height, width, A * 4))
+    rpn_bbox_inside_weights = bbox_inside_weights.reshape((1, height, width, A * 4))
+    rpn_bbox_outside_weights = bbox_outside_weights.reshape((1, height, width, A * 4))
 
     return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
 
