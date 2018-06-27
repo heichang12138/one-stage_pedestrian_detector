@@ -96,11 +96,6 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
 
     labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
-    # fg label: for each gt, anchor with highest overlap
-    labels[gt_argmax_overlaps] = 1
-    # fg label: above threshold IOU
-    labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
-
     # preclude dontcare areas
     if dontcare_areas is not None and dontcare_areas.shape[0] > 0:
         # intersec shape is D x A
@@ -110,6 +105,11 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
         )
         intersecs_ = intersecs.sum(axis=0) # A x 1
         labels[intersecs_ > cfg.TRAIN.DONTCARE_AREA_INTERSECTION_HI] = -1
+
+    # fg label: for each gt, anchor with highest overlap
+    labels[gt_argmax_overlaps] = 1
+    # fg label: above threshold IOU
+    labels[max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
 
     if not cfg.RETINA.RETINA_ON:
         # subsample positive labels if we have too many
