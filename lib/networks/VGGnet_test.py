@@ -42,7 +42,7 @@ class VGGnet_test(Network):
         (self.feed('rpn_conv/3x3')
          .final_conv(1, 1, len(anchor_scales)*2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score')
          .spatial_reshape_layer(2, name='rpn_cls_score_reshape')
-         .spatial_softmax(name='rpn_cls_prob')
+         .spatial_sigmoid(name='rpn_cls_prob')
          .spatial_reshape_layer(len(anchor_scales)*2, name='rpn_cls_prob_reshape'))
 
         (self.feed('rpn_conv/3x3')
