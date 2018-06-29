@@ -123,7 +123,6 @@ __C.RETINA.RETINA_ON = False
 __C.RETINA.PI = 0.01
 __C.RETINA.GAMMA = 2
 __C.RETINA.ALPHA = 0.25
-__C.RETINA.EPSILON = 1
 
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.

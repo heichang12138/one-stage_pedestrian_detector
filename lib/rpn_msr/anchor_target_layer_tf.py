@@ -158,18 +158,10 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, dontcare_areas, im_info, _feat_
     bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, fill=0)
     bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside, fill=0)
 
-    # labels
-    labels = labels.reshape((1, height, width, A))
-    rpn_labels = labels
-    # bbox_targets
-    bbox_targets = bbox_targets.reshape((1, height, width, A * 4))
-    rpn_bbox_targets = bbox_targets
-    # bbox_inside_weights
-    bbox_inside_weights = bbox_inside_weights.reshape((1, height, width, A * 4))
-    rpn_bbox_inside_weights = bbox_inside_weights
-    # bbox_outside_weights
-    bbox_outside_weights = bbox_outside_weights.reshape((1, height, width, A * 4))
-    rpn_bbox_outside_weights = bbox_outside_weights
+    rpn_labels = labels.reshape((1, height, width, A))
+    rpn_bbox_targets = bbox_targets.reshape((1, height, width, A * 4))
+    rpn_bbox_inside_weights = bbox_inside_weights.reshape((1, height, width, A * 4))
+    rpn_bbox_outside_weights = bbox_outside_weights.reshape((1, height, width, A * 4))
 
     return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
 

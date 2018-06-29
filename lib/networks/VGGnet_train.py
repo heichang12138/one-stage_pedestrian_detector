@@ -41,30 +41,17 @@ class VGGnet_train(Network):
         (self.feed('conv5_3')
              .conv(3,3,512,1,1,name='rpn_conv/3x3'))
 
-        # Loss of rpn_cls & rpn_boxes
-        # shape is (1, H, W, A x 4) and (1, H, W, A x 2)
-        (self.feed('rpn_conv/3x3')#3
-             .conv(1,1,len(anchor_scales) * 1 * 4, 1, 1, padding='VALID', relu = False, name='rpn_bbox_pred'))
-        (self.feed('rpn_conv/3x3')#3
-             .conv(1, 1, len(anchor_scales) * 1 * 2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score'))
+        (self.feed('rpn_conv/3x3')
+             .conv(1,1,len(anchor_scales)*4, 1, 1, padding='VALID', relu=False, name='rpn_bbox_pred'))
 
-        # generating training labels on the fly
-        # output: rpn_labels(HxWxA, 2) rpn_bbox_targets(HxWxA, 4) rpn_bbox_inside_weights rpn_bbox_outside_weights
+        (self.feed('rpn_conv/3x3')
+             .conv(1, 1, len(anchor_scales)*2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score')
+             .spatial_reshape_layer(2, name = 'rpn_cls_score_reshape')
+             .spatial_softmax(name='rpn_cls_prob')
+             .spatial_reshape_layer(len(anchor_scales)*1*2, name='rpn_cls_prob_reshape'))
+
         (self.feed('rpn_cls_score', 'gt_boxes', 'dontcare_areas', 'im_info')
              .anchor_target_layer(_feat_stride, anchor_scales, name = 'rpn-data' ))
 
-        # shape is (1, H, W, Ax2) -> (1, H, WxA, 2)
-        (self.feed('rpn_cls_score')
-             .spatial_reshape_layer(2, name = 'rpn_cls_score_reshape')
-             .spatial_softmax(name='rpn_cls_prob'))
-
-        # shape is (1, H, WxA, 2) -> (1, H, W, Ax2)
-        (self.feed('rpn_cls_prob')#3
-             .spatial_reshape_layer(len(anchor_scales)*1*2, name = 'rpn_cls_prob_reshape'))
-
-        # ========= RoI Proposal ============
-        # add the delta(output) to anchors then
-        # choose some reasonabel boxes, considering scores, ratios, size and iou
-        # rpn_rois <- (1 x H x W x A, 5) e.g. [0, x1, y1, x2, y2]
         (self.feed('rpn_cls_prob_reshape','rpn_bbox_pred','im_info')
              .proposal_layer(_feat_stride, anchor_scales, 'TRAIN', name = 'rpn_rois'))

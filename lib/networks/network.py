@@ -459,40 +459,39 @@ class Network(object):
     def build_focal_loss(self):
         gamma = cfg.RETINA.GAMMA
         alpha = cfg.RETINA.ALPHA
-        epsilon = cfg.RETINA.EPSILON
-
-        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
-        fg_keep = tf.equal(rpn_label, 1)
-        rpn_keep = tf.not_equal(rpn_label, -1)
-        fg_keep_inds = tf.where(fg_keep)
-        rpn_keep_inds = tf.where(rpn_keep)
-
-        rpn_label = tf.squeeze(tf.gather(rpn_label, rpn_keep_inds))
-        rpn_label = tf.cast(rpn_label, tf.bool)
-        num_gt_anchor = tf.reduce_sum(tf.cast(fg_keep,tf.float32))
 
         rpn_cls_prob = tf.reshape(self.get_output('rpn_cls_prob_reshape'), [-1, 2])
-        rpn_cls_prob = tf.reshape(tf.gather(rpn_cls_prob, rpn_keep_inds),[-1,2])
-        fg_prob = rpn_cls_prob[:,1]
+        rpn_bbox_pred = self.get_output('rpn_bbox_pred')
+
+        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
+        rpn_bbox_targets = self.get_output('rpn-data')[1]
+        rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
+        rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
+        # ignore_label(-1)
+        fg_keep = tf.equal(rpn_label, 1)
+        rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
+
+        rpn_cls_prob = tf.reshape(tf.gather(rpn_cls_prob, rpn_keep), [-1, 2])
+        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep), [-1, 4])
+
+        rpn_label = tf.reshape(tf.gather(rpn_label, rpn_keep), [-1])
+        rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep), [-1, 4])
+        rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
+        rpn_bbox_outside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), rpn_keep), [-1, 4])
+
+        rpn_label = tf.cast(rpn_label, tf.bool)
+        fg_prob = rpn_cls_prob[:, 1]
         pt = tf.where(rpn_label, fg_prob, 1-fg_prob)
         alpha_tf = tf.scalar_mul(alpha,tf.ones_like(pt))
         at = tf.where(rpn_label,alpha_tf, 1-alpha_tf)
 
         rpn_cross_entropy_n = (-1) * at * tf.pow(1-pt, gamma) * tf.log(pt)
-        rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n)/(num_gt_anchor+epsilon)
-
-        rpn_bbox_pred = self.get_output('rpn_bbox_pred')
-        rpn_bbox_targets = self.get_output('rpn-data')[1]
-        rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
-        rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
-        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), fg_keep_inds), [-1, 4])
-        rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), fg_keep_inds), [-1, 4])
-        rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), fg_keep_inds), [-1, 4])
-        rpn_bbox_outside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), fg_keep_inds), [-1, 4])
+        rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n)/(tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
 
         rpn_loss_box_n = tf.reduce_sum(self.smooth_l1_dist(
             rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])
-        rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) /(num_gt_anchor+epsilon)
+
+        rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
 
         loss = rpn_cross_entropy + rpn_loss_box
 
