@@ -432,9 +432,6 @@ class Network(object):
         else:
             mask_cross_entropy = tf.constant(0.0)
 
-        rpn_cls_score = tf.reshape(self.get_output('rpn_cls_score_reshape'), [-1, 2])
-        rpn_bbox_pred = self.get_output('rpn_bbox_pred')
-
         rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
         rpn_bbox_targets = self.get_output('rpn-data')[1]
         rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
@@ -442,70 +439,33 @@ class Network(object):
         fg_keep = tf.equal(rpn_label, 1)
         rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
 
-        rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_keep), [-1, 2])
-        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep), [-1, 4])
-
-        rpn_label = tf.reshape(tf.gather(rpn_label, rpn_keep), [-1])
-        rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep), [-1, 4])
-        rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
-
-        rpn_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label)
-        rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)
-
-        rpn_loss_box_n = tf.reduce_sum(self.smooth_l1_dist(
-            rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])
-
-        rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
-
-        loss = rpn_cross_entropy + rpn_loss_box + mask_cross_entropy
-
-        # add regularizer
-        if cfg.TRAIN.WEIGHT_DECAY > 0:
-            regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-            loss = tf.add_n(regularization_losses) + loss
-
-        return loss, rpn_cross_entropy, rpn_loss_box, mask_cross_entropy
-
-    def build_focal_loss(self):
-        # SDS
-        if cfg.SDS.SDS_ON:
-            rpn_mask_pred = tf.reshape(self.get_output('rpn_mask_pred'), [-1, 2])
-            rpn_mask = tf.reshape(self.get_output('rpn-data')[3], [-1])
-            rpn_mask_weights = tf.reshape(self.get_output('rpn-data')[4], [-1])
-            mask_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                                            logits=rpn_mask_pred, labels=rpn_mask)
-            mask_cross_entropy = tf.reduce_sum(rpn_mask_weights * mask_cross_entropy_n) / tf.reduce_sum(rpn_mask_weights)
+        if cfg.RETINA.RETINA_ON:
+            rpn_cls_prob = tf.reshape(self.get_output('rpn_cls_prob_reshape'), [-1, 2])
+            rpn_cls_prob = tf.reshape(tf.gather(rpn_cls_prob, rpn_keep), [-1, 2])
         else:
-            mask_cross_entropy = tf.constant(0.0)
+            rpn_cls_score = tf.reshape(self.get_output('rpn_cls_score_reshape'), [-1, 2])
+            rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_keep), [-1, 2])
 
-        gamma = cfg.RETINA.GAMMA
-        alpha = cfg.RETINA.ALPHA
-
-        rpn_cls_prob = tf.reshape(self.get_output('rpn_cls_prob_reshape'), [-1, 2])
         rpn_bbox_pred = self.get_output('rpn_bbox_pred')
-
-        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
-        rpn_bbox_targets = self.get_output('rpn-data')[1]
-        rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
-        # ignore_label(-1)
-        fg_keep = tf.equal(rpn_label, 1)
-        rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
-
-        rpn_cls_prob = tf.reshape(tf.gather(rpn_cls_prob, rpn_keep), [-1, 2])
         rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep), [-1, 4])
 
         rpn_label = tf.reshape(tf.gather(rpn_label, rpn_keep), [-1])
         rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep), [-1, 4])
         rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
 
-        rpn_label = tf.cast(rpn_label, tf.bool)
-        fg_prob = rpn_cls_prob[:, 1]
-        pt = tf.where(rpn_label, fg_prob, 1-fg_prob)
-        alpha_tf = tf.scalar_mul(alpha,tf.ones_like(pt))
-        at = tf.where(rpn_label,alpha_tf, 1-alpha_tf)
-
-        rpn_cross_entropy_n = (-1) * at * tf.pow(1-pt, gamma) * tf.log(pt)
-        rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n)/(tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
+        if cfg.RETINA.RETINA_ON:
+            gamma = cfg.RETINA.GAMMA
+            alpha = cfg.RETINA.ALPHA
+            rpn_label = tf.cast(rpn_label, tf.bool)
+            fg_prob = rpn_cls_prob[:, 1]
+            pt = tf.where(rpn_label, fg_prob, 1-fg_prob)
+            alpha_tf = tf.scalar_mul(alpha,tf.ones_like(pt))
+            at = tf.where(rpn_label,alpha_tf, 1-alpha_tf)
+            rpn_cross_entropy_n = (-1) * at * tf.pow(1-pt, gamma) * tf.log(pt)
+            rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n)/(tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
+        else:
+            rpn_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label)
+            rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)
 
         rpn_loss_box_n = tf.reduce_sum(self.smooth_l1_dist(
             rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])

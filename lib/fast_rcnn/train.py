@@ -86,12 +86,7 @@ class SolverWrapper(object):
     def train_model(self, sess, max_iters, restore=False):
         data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
 
-        if cfg.RETINA.RETINA_ON:
-            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask \
-                                                = self.net.build_focal_loss()
-        else:
-            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask \
-                                                = self.net.build_loss()
+        loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_loss()
 
         global_step = tf.Variable(0, trainable=False)
 
