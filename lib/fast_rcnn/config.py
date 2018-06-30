@@ -88,12 +88,7 @@ __C.TRAIN.RPN_PRE_NMS_TOP_N = 12000
 __C.TRAIN.RPN_POST_NMS_TOP_N = 2000
 # Proposal height and width both need to be greater than RPN_MIN_SIZE (at orig image scale)
 __C.TRAIN.RPN_MIN_SIZE = 16
-# Deprecated (outside weights)
 __C.TRAIN.RPN_BBOX_INSIDE_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
-# Give the positive RPN examples weight of p * 1 / {num positives}
-# and give negatives a weight of (1 - p)
-# Set to -1.0 to use uniform example weighting
-__C.TRAIN.RPN_POSITIVE_WEIGHT = -1.0
 
 # ---------------------TEST=-----------------------------
 __C.TEST = edict()
@@ -123,6 +118,12 @@ __C.RETINA.RETINA_ON = False
 __C.RETINA.PI = 0.01
 __C.RETINA.GAMMA = 2
 __C.RETINA.ALPHA = 0.25
+
+# -----------------SDS------------------------------
+__C.SDS = edict()
+
+__C.SDS.SDS_ON = False
+__C.SDS.MEAN_HEIGHT = 50.
 
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.

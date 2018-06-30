@@ -37,6 +37,11 @@ class VGGnet_train(Network):
              .conv(3, 3, 512, 1, 1, name='conv5_1')
              .conv(3, 3, 512, 1, 1, name='conv5_2')
              .conv(3, 3, 512, 1, 1, name='conv5_3'))
+        # SDS
+        if cfg.SDS.SDS_ON:
+            (self.feed('conv5_3')
+                 .conv(1, 1, 2, 1, 1, padding='VALID', relu=False, name='rpn_mask_pred'))
+
         #========= RPN ============
         (self.feed('conv5_3')
              .conv(3,3,512,1,1,name='rpn_conv/3x3'))

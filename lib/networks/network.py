@@ -257,18 +257,20 @@ class Network(object):
 
         with tf.variable_scope(name):
             # 'rpn_cls_score', 'gt_boxes', 'dontcare_areas', 'im_info'
-            rpn_labels,rpn_bbox_targets,rpn_bbox_inside_weights,rpn_bbox_outside_weights = \
+            rpn_labels,rpn_bbox_targets,rpn_bbox_inside_weights, \
+            rpn_mask, rpn_mask_weights = \
                 tf.py_func(anchor_target_layer_py,
                            [input[0],input[1],input[2],input[3], _feat_stride, anchor_scales],
-                           [tf.float32,tf.float32,tf.float32,tf.float32])
+                           [tf.float32]*5)
 
-            rpn_labels = tf.convert_to_tensor(tf.cast(rpn_labels,tf.int32), name = 'rpn_labels') # shape is (1 x H x W x A, 2)
-            rpn_bbox_targets = tf.convert_to_tensor(rpn_bbox_targets, name = 'rpn_bbox_targets') # shape is (1 x H x W x A, 4)
-            rpn_bbox_inside_weights = tf.convert_to_tensor(rpn_bbox_inside_weights , name = 'rpn_bbox_inside_weights') # shape is (1 x H x W x A, 4)
-            rpn_bbox_outside_weights = tf.convert_to_tensor(rpn_bbox_outside_weights , name = 'rpn_bbox_outside_weights') # shape is (1 x H x W x A, 4)
+            rpn_labels = tf.convert_to_tensor(tf.cast(rpn_labels,tf.int32), name = 'rpn_labels')
+            rpn_bbox_targets = tf.convert_to_tensor(rpn_bbox_targets, name = 'rpn_bbox_targets')
+            rpn_bbox_inside_weights = tf.convert_to_tensor(rpn_bbox_inside_weights , name = 'rpn_bbox_inside_weights')
+            rpn_mask = tf.convert_to_tensor(tf.cast(rpn_mask, tf.int32), name='rpn_mask')
+            rpn_mask_weights = tf.convert_to_tensor(rpn_mask_weights, name='rpn_mask_weights')
 
-
-            return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
+            return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, \
+                    rpn_mask, rpn_mask_weights
 
     @layer
     def reshape_layer(self, input, d, name):
@@ -419,25 +421,33 @@ class Network(object):
 
 
     def build_loss(self):
-        rpn_cls_score = tf.reshape(self.get_output('rpn_cls_score_reshape'), [-1, 2])  # shape (HxWxA, 2)
-        rpn_bbox_pred = self.get_output('rpn_bbox_pred') # shape (1, H, W, Ax4)
-        # rpn_bbox_pred_reshape?
+        # SDS
+        if cfg.SDS.SDS_ON:
+            rpn_mask_pred = tf.reshape(self.get_output('rpn_mask_pred'), [-1, 2])
+            rpn_mask = tf.reshape(self.get_output('rpn-data')[3], [-1])
+            rpn_mask_weights = tf.reshape(self.get_output('rpn-data')[4], [-1])
+            mask_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                                            logits=rpn_mask_pred, labels=rpn_mask)
+            mask_cross_entropy = tf.reduce_sum(rpn_mask_weights * mask_cross_entropy_n) / tf.reduce_sum(rpn_mask_weights)
+        else:
+            mask_cross_entropy = tf.constant(0.0)
 
-        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])  # shape (HxWxA)
+        rpn_cls_score = tf.reshape(self.get_output('rpn_cls_score_reshape'), [-1, 2])
+        rpn_bbox_pred = self.get_output('rpn_bbox_pred')
+
+        rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
         rpn_bbox_targets = self.get_output('rpn-data')[1]
         rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
-        rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
         # ignore_label(-1)
         fg_keep = tf.equal(rpn_label, 1)
         rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
 
-        rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_keep), [-1, 2]) # shape (N, 2)
-        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep), [-1, 4]) # shape (N, 4)
+        rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_keep), [-1, 2])
+        rpn_bbox_pred = tf.reshape(tf.gather(tf.reshape(rpn_bbox_pred, [-1, 4]), rpn_keep), [-1, 4])
 
         rpn_label = tf.reshape(tf.gather(rpn_label, rpn_keep), [-1])
         rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep), [-1, 4])
         rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
-        rpn_bbox_outside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), rpn_keep), [-1, 4])
 
         rpn_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label)
         rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)
@@ -447,16 +457,27 @@ class Network(object):
 
         rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
 
-        loss = rpn_cross_entropy + rpn_loss_box
+        loss = rpn_cross_entropy + rpn_loss_box + mask_cross_entropy
 
         # add regularizer
         if cfg.TRAIN.WEIGHT_DECAY > 0:
             regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
             loss = tf.add_n(regularization_losses) + loss
 
-        return loss, rpn_cross_entropy, rpn_loss_box
+        return loss, rpn_cross_entropy, rpn_loss_box, mask_cross_entropy
 
     def build_focal_loss(self):
+        # SDS
+        if cfg.SDS.SDS_ON:
+            rpn_mask_pred = tf.reshape(self.get_output('rpn_mask_pred'), [-1, 2])
+            rpn_mask = tf.reshape(self.get_output('rpn-data')[3], [-1])
+            rpn_mask_weights = tf.reshape(self.get_output('rpn-data')[4], [-1])
+            mask_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                                            logits=rpn_mask_pred, labels=rpn_mask)
+            mask_cross_entropy = tf.reduce_sum(rpn_mask_weights * mask_cross_entropy_n) / tf.reduce_sum(rpn_mask_weights)
+        else:
+            mask_cross_entropy = tf.constant(0.0)
+
         gamma = cfg.RETINA.GAMMA
         alpha = cfg.RETINA.ALPHA
 
@@ -466,7 +487,6 @@ class Network(object):
         rpn_label = tf.reshape(self.get_output('rpn-data')[0], [-1])
         rpn_bbox_targets = self.get_output('rpn-data')[1]
         rpn_bbox_inside_weights = self.get_output('rpn-data')[2]
-        rpn_bbox_outside_weights = self.get_output('rpn-data')[3]
         # ignore_label(-1)
         fg_keep = tf.equal(rpn_label, 1)
         rpn_keep = tf.where(tf.not_equal(rpn_label, -1))
@@ -477,7 +497,6 @@ class Network(object):
         rpn_label = tf.reshape(tf.gather(rpn_label, rpn_keep), [-1])
         rpn_bbox_targets = tf.reshape(tf.gather(tf.reshape(rpn_bbox_targets, [-1, 4]), rpn_keep), [-1, 4])
         rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
-        rpn_bbox_outside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), rpn_keep), [-1, 4])
 
         rpn_label = tf.cast(rpn_label, tf.bool)
         fg_prob = rpn_cls_prob[:, 1]
@@ -493,11 +512,11 @@ class Network(object):
 
         rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1.0)
 
-        loss = rpn_cross_entropy + rpn_loss_box
+        loss = rpn_cross_entropy + rpn_loss_box + mask_cross_entropy
 
         # add regularizer
         if cfg.TRAIN.WEIGHT_DECAY > 0:
             regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
             loss = tf.add_n(regularization_losses) + loss
 
-        return loss, rpn_cross_entropy, rpn_loss_box
+        return loss, rpn_cross_entropy, rpn_loss_box, mask_cross_entropy

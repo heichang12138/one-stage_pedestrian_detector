@@ -87,13 +87,17 @@ class SolverWrapper(object):
         data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
 
         if cfg.RETINA.RETINA_ON:
-            loss, rpn_cross_entropy, rpn_loss_box = self.net.build_focal_loss()
+            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask \
+                                                = self.net.build_focal_loss()
         else:
-            loss, rpn_cross_entropy, rpn_loss_box = self.net.build_loss()
+            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask \
+                                                = self.net.build_loss()
 
         global_step = tf.Variable(0, trainable=False)
 
         # scalar summary
+        if cfg.SDS.SDS_ON:
+            tf.summary.scalar('rpn_loss_mask', rpn_loss_mask)
         tf.summary.scalar('rpn_rgs_loss', rpn_loss_box)
         tf.summary.scalar('rpn_cls_loss', rpn_cross_entropy)
         tf.summary.scalar('loss', loss)
@@ -143,6 +147,7 @@ class SolverWrapper(object):
 
         last_snapshot_iter = -1
         timer = Timer()
+
         for iter in range(restore_iter, max_iters):
             timer.tic()
             # learning rate
@@ -159,18 +164,17 @@ class SolverWrapper(object):
                 self.net.dontcare_areas: blobs['dontcare_areas']
             }
                 
-            res_fetches = [self.net.get_output('rpn_cls_prob'), 
-                           self.net.get_output('rpn_bbox_pred'), 
-                           self.net.get_output('rpn_rois')]
+            res_fetches = [self.net.get_output('rpn_rois')]
 
             fetch_list = [rpn_cross_entropy,
                           rpn_loss_box,
                           summary_op,
                           train_op] + res_fetches
-                
-            fetch_list += []
-            rpn_loss_cls_value, rpn_loss_box_value, summary_str, _, \
-            cls_prob, bbox_pred, rois =  sess.run(fetches=fetch_list, feed_dict=feed_dict)
+
+            fetch_list += [rpn_loss_mask]
+
+            rpn_loss_cls_value, rpn_loss_box_value, summary_str, _, rois, \
+            rpn_loss_mask_value = sess.run(fetches=fetch_list, feed_dict=feed_dict)
 
             self.writer.add_summary(summary=summary_str, global_step=global_step.eval())
 
@@ -193,9 +197,14 @@ class SolverWrapper(object):
                 self.writer.add_summary(log_image_summary_op, global_step=global_step.eval())
 
             if (iter) % (cfg.TRAIN.DISPLAY) == 0:
-                print 'iter: %d / %d, total loss: %.4f, rpn_loss_cls: %.4f, rpn_loss_box: %.4f, lr: %f'%\
-                        (iter, max_iters, rpn_loss_cls_value + rpn_loss_box_value ,\
-                         rpn_loss_cls_value, rpn_loss_box_value, lr.eval())
+                total_loss = rpn_loss_cls_value + rpn_loss_box_value + rpn_loss_mask_value
+                print 'iter: %d / %d,'%(iter, max_iters),
+                print 'total loss: %.4f,'%(total_loss),
+                print 'cls loss: %.4f,'%(rpn_loss_cls_value),
+                print 'box loss: %.4f,'%(rpn_loss_box_value),
+                if cfg.SDS.SDS_ON:
+                    print 'mask loss: %.4f,'%(rpn_loss_mask_value),
+                print 'lr: %f'%( lr.eval())
                 print 'speed: {:.3f}s / iter'.format(_diff_time)
 
             if (iter+1) % cfg.TRAIN.SNAPSHOT_ITERS == 0:
@@ -232,24 +241,6 @@ def get_training_roidb(imdb):
     print 'done'
 
     return imdb.roidb
-
-def _process_boxes_scores(cls_prob, bbox_pred, rois, im_scale, im_shape):
-    """
-    process the output tensors, to get the boxes and scores
-    """
-    assert rois.shape[0] == bbox_pred.shape[0],\
-        'rois and bbox_pred must have the same shape'
-    boxes = rois[:, 1:5]
-    scores = cls_prob
-    if cfg.TEST.BBOX_REG:
-        pred_boxes = bbox_transform_inv(boxes, deltas=bbox_pred)
-        pred_boxes = clip_boxes(pred_boxes, im_shape)
-    else:
-        # Simply repeat the boxes, once for each class
-        # boxes = np.tile(boxes, (1, scores.shape[1]))
-
-        pred_boxes = clip_boxes(boxes, im_shape)
-    return pred_boxes, scores
 
 def _draw_boxes_to_image(im, res):
     colors = [(86, 0, 240), (173, 225, 61), (54, 137, 255),\

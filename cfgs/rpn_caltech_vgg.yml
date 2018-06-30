@@ -40,3 +40,5 @@ TEST:
   SCALES: [720,]
 RETINA:
   PI: 0.5
+SDS:
+  SDS_ON: True
