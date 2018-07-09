@@ -86,7 +86,10 @@ class SolverWrapper(object):
     def train_model(self, sess, max_iters, restore=False):
         data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
 
-        loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_loss()
+        if cfg.MULTISCALE.MS_ON:
+            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_ms_loss()
+        else:
+            loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_loss()
 
         global_step = tf.Variable(0, trainable=False)
 
@@ -128,17 +131,14 @@ class SolverWrapper(object):
 
         # resuming a trainer
         if restore:
-            try:
-                ckpt = tf.train.get_checkpoint_state(self.pretrained_model)
-                print(self.output_dir)
-                print 'Restoring from {}...'.format(ckpt.model_checkpoint_path),
-                self.saver.restore(sess, ckpt.model_checkpoint_path)
-                stem = os.path.splitext(os.path.basename(ckpt.model_checkpoint_path))[0]
-                restore_iter = int(stem.split('_')[-1])
-                sess.run(global_step.assign(restore_iter))
-                print 'done'
-            except:
-                raise 'Check your pretrained {:s}'.format(ckpt.model_checkpoint_path)
+            ckpt = tf.train.get_checkpoint_state(self.pretrained_model)
+            print(self.output_dir)
+            print 'Restoring from {}...'.format(ckpt.model_checkpoint_path),
+            self.saver.restore(sess, ckpt.model_checkpoint_path)
+            stem = os.path.splitext(os.path.basename(ckpt.model_checkpoint_path))[0]
+            restore_iter = int(stem.split('_')[-1])
+            sess.run(global_step.assign(restore_iter))
+            print 'done'
 
         last_snapshot_iter = -1
         timer = Timer()

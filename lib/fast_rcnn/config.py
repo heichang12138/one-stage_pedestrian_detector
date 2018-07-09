@@ -125,6 +125,13 @@ __C.SDS = edict()
 __C.SDS.SDS_ON = False
 __C.SDS.MEAN_HEIGHT = 50.
 
+# -----------------Multi-Scale--------------------------
+__C.MULTISCALE = edict()
+
+__C.MULTISCALE.MS_ON = False
+# useful when RETINA_ON=False
+__C.MULTISCALE.BATCHSIZE = [96, 32]# [C5,C6]
+
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.
     If the directory does not exist, it is created.
