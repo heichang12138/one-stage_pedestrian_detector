@@ -15,39 +15,46 @@ class VGGnet_test(Network):
 
     def setup(self):
         anchor_scales = cfg.ANCHOR_SCALES
-        _feat_stride = [16, ]
+        _feat_stride = cfg.FEAT_STRIDE
 
         (self.feed('data')
-         .conv(3, 3, 64, 1, 1, name='conv1_1', trainable=False)
-         .conv(3, 3, 64, 1, 1, name='conv1_2', trainable=False)
-         .max_pool(2, 2, 2, 2, padding='VALID', name='pool1')
-         .conv(3, 3, 128, 1, 1, name='conv2_1', trainable=False)
-         .conv(3, 3, 128, 1, 1, name='conv2_2', trainable=False)
-         .max_pool(2, 2, 2, 2, padding='VALID', name='pool2')
-         .conv(3, 3, 256, 1, 1, name='conv3_1')
-         .conv(3, 3, 256, 1, 1, name='conv3_2')
-         .conv(3, 3, 256, 1, 1, name='conv3_3')
-         .max_pool(2, 2, 2, 2, padding='VALID', name='pool3')
-         .conv(3, 3, 512, 1, 1, name='conv4_1')
-         .conv(3, 3, 512, 1, 1, name='conv4_2')
-         .conv(3, 3, 512, 1, 1, name='conv4_3')
-         .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
-         .conv(3, 3, 512, 1, 1, name='conv5_1')
-         .conv(3, 3, 512, 1, 1, name='conv5_2')
-         .conv(3, 3, 512, 1, 1, name='conv5_3'))
+             .conv(3, 3, 64, 1, 1, name='conv1_1', trainable=False)
+             .conv(3, 3, 64, 1, 1, name='conv1_2', trainable=False)
+             .max_pool(2, 2, 2, 2, padding='VALID', name='pool1')
+             .conv(3, 3, 128, 1, 1, name='conv2_1', trainable=False)
+             .conv(3, 3, 128, 1, 1, name='conv2_2', trainable=False)
+             .max_pool(2, 2, 2, 2, padding='VALID', name='pool2')
+             .conv(3, 3, 256, 1, 1, name='conv3_1')
+             .conv(3, 3, 256, 1, 1, name='conv3_2')
+             .conv(3, 3, 256, 1, 1, name='conv3_3')
+             .max_pool(2, 2, 2, 2, padding='VALID', name='pool3')
+             .conv(3, 3, 512, 1, 1, name='conv4_1')
+             .conv(3, 3, 512, 1, 1, name='conv4_2')
+             .conv(3, 3, 512, 1, 1, name='conv4_3'))
+        if cfg.ATROUS.ATROUS_ON:
+            (self.feed('conv4_3')
+                 .max_pool(2, 2, 1, 1, padding='SAME', name='pool4')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_1')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_2')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_3'))
+        else:
+            (self.feed('conv4_3')
+                 .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
+                 .conv(3, 3, 512, 1, 1, name='conv5_1')
+                 .conv(3, 3, 512, 1, 1, name='conv5_2')
+                 .conv(3, 3, 512, 1, 1, name='conv5_3'))
 
         (self.feed('conv5_3')
-         .conv(3, 3, 512, 1, 1, name='rpn_conv/3x3'))
+             .conv(3, 3, 512, 1, 1, name='rpn_conv/3x3'))
 
         (self.feed('rpn_conv/3x3')
-         .final_conv(1, 1, len(anchor_scales)*2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score')
-         .spatial_reshape_layer(2, name='rpn_cls_score_reshape')
-         .spatial_sigmoid(name='rpn_cls_prob')
-         .spatial_reshape_layer(len(anchor_scales)*2, name='rpn_cls_prob_reshape'))
+             .final_conv(1, 1, len(anchor_scales)*2, 1, 1, padding='VALID', relu=False, name='rpn_cls_score')
+             .spatial_reshape_layer(2, name='rpn_cls_score_reshape')
+             .spatial_sigmoid(name='rpn_cls_prob')
+             .spatial_reshape_layer(len(anchor_scales)*2, name='rpn_cls_prob_reshape'))
 
         (self.feed('rpn_conv/3x3')
-         .conv(1, 1, len(anchor_scales)*4, 1, 1, padding='VALID', relu=False, name='rpn_bbox_pred'))
+             .conv(1, 1, len(anchor_scales)*4, 1, 1, padding='VALID', relu=False, name='rpn_bbox_pred'))
 
         (self.feed('rpn_cls_prob_reshape', 'rpn_bbox_pred', 'im_info')
-         .proposal_layer(_feat_stride, anchor_scales, 'TEST', name='rois'))
-
+             .proposal_layer(_feat_stride, anchor_scales, 'TEST', name='rois'))

@@ -11,6 +11,7 @@ cfg = __C
 __C.IMAGE_HEIGHT = 480
 __C.IMAGE_WIDTH = 640
 __C.ANCHOR_SCALES = [8, 16, 32]
+__C.FEAT_STRIDE = [16,]
 __C.NCLASSES = 21
 # Pixel mean values (BGR order) as a (1, 1, 3) array
 # We use the same pixel mean for all networks even though it's not exactly what
@@ -131,6 +132,11 @@ __C.MULTISCALE = edict()
 __C.MULTISCALE.MS_ON = False
 # useful when RETINA_ON=False
 __C.MULTISCALE.BATCHSIZE = [96, 32]# [C5,C6]
+
+# -----------------Atrous--------------------------
+__C.ATROUS = edict()
+
+__C.ATROUS.ATROUS_ON = False
 
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.

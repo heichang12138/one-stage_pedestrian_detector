@@ -17,7 +17,7 @@ class VGGnet_train(Network):
 
     def setup(self):
         anchor_scales = cfg.ANCHOR_SCALES
-        _feat_stride = [16, ]
+        _feat_stride = cfg.FEAT_STRIDE
 
         (self.feed('data')
              .conv(3, 3, 64, 1, 1, name='conv1_1', trainable=False)
@@ -32,11 +32,19 @@ class VGGnet_train(Network):
              .max_pool(2, 2, 2, 2, padding='VALID', name='pool3')
              .conv(3, 3, 512, 1, 1, name='conv4_1')
              .conv(3, 3, 512, 1, 1, name='conv4_2')
-             .conv(3, 3, 512, 1, 1, name='conv4_3')
-             .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
-             .conv(3, 3, 512, 1, 1, name='conv5_1')
-             .conv(3, 3, 512, 1, 1, name='conv5_2')
-             .conv(3, 3, 512, 1, 1, name='conv5_3'))
+             .conv(3, 3, 512, 1, 1, name='conv4_3'))
+        if cfg.ATROUS.ATROUS_ON:
+            (self.feed('conv4_3')
+                 .max_pool(2, 2, 1, 1, padding='SAME', name='pool4')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_1')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_2')
+                 .atrous_conv(3, 3, 512, 2, name='conv5_3'))
+        else:
+            (self.feed('conv4_3')
+                 .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
+                 .conv(3, 3, 512, 1, 1, name='conv5_1')
+                 .conv(3, 3, 512, 1, 1, name='conv5_2')
+                 .conv(3, 3, 512, 1, 1, name='conv5_3'))
         # SDS
         if cfg.SDS.SDS_ON:
             (self.feed('conv5_3')
