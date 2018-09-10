@@ -6,23 +6,16 @@ import argparse
 import os.path as osp
 import glob
 import pprint
+import pdb
 
 this_dir = osp.dirname(__file__)
 print(this_dir)
 sys.path.append('/home/heichang/code/TFFRCNN')
 from lib.networks.factory import get_network
 from lib.fast_rcnn.config import cfg, cfg_from_file
-from lib.fast_rcnn.test import im_detect
+from lib.fast_rcnn.test import im_detect_rpn
 from lib.fast_rcnn.nms_wrapper import nms
 from lib.utils.timer import Timer
-
-#CLASSES = ('__background__',
-#           'aeroplane', 'bicycle', 'bird', 'boat',
-#           'bottle', 'bus', 'car', 'cat', 'chair',
-#           'cow', 'diningtable', 'dog', 'horse',
-#           'motorbike', 'person', 'pottedplant',
-#           'sheep', 'sofa', 'train', 'tvmonitor')
-
 
 CLASSES = ('__background__','pedestrian')
 
@@ -40,12 +33,12 @@ def vis_detections(im, class_name, dets, ax, thresh=0.5):
             plt.Rectangle((bbox[0], bbox[1]),
                           bbox[2] - bbox[0],
                           bbox[3] - bbox[1], fill=False,
-                          edgecolor='red', linewidth=3.5)
+                          edgecolor='red', linewidth=1)
         )
         ax.text(bbox[0], bbox[1] - 2,
-                '{:s} {:.3f}'.format(class_name, score),
+                '{:.3f}'.format(score),
                 bbox=dict(facecolor='blue', alpha=0.5),
-                fontsize=14, color='white')
+                fontsize=10, color='white')
 
     ax.set_title(('{} detections with '
                   'p({} | box) >= {:.1f}').format(class_name, class_name,
@@ -65,7 +58,7 @@ def demo(sess, net, image_name):
     # Detect all object classes and regress object bounds
     timer = Timer()
     timer.tic()
-    scores, boxes = im_detect(sess, net, im)
+    scores, boxes = im_detect_rpn(sess, net, im)
     timer.toc()
     print ('Detection took {:.3f}s for '
            '{:d} object proposals').format(timer.total_time, boxes.shape[0])
@@ -75,8 +68,8 @@ def demo(sess, net, image_name):
     fig, ax = plt.subplots(figsize=(12, 12))
     ax.imshow(im, aspect='equal')
 
-    CONF_THRESH = 0.8
-    NMS_THRESH = 0.3
+    CONF_THRESH = 0.5
+    NMS_THRESH = 0.5
     for cls_ind, cls in enumerate(CLASSES[1:]):
         cls_ind += 1  # because we skipped background
         cls_boxes = boxes[:, 4 * cls_ind:4 * (cls_ind + 1)]
@@ -109,15 +102,9 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    args.demo_net = 'Resnet50_test'
-    args.cfg_file = '/home/heichang/code/TFFRCNN/experiments/cfgs/faster_rcnn_caltech_basic.yml'
-    args.model = '/home/heichang/code/TFFRCNN/output/faster_rcnn_caltech/caltech_train/VGGnet_fast_rcnn_iter_115000.ckpt'
     if args.cfg_file is not None:
         cfg_from_file(args.cfg_file)
     pprint.pprint(cfg)
-    #if args.model == ' ' or not os.path.exists(args.model):
-     #   print ('current path is ' + os.path.abspath(__file__))
-      #  raise IOError(('Error: Model not found.\n'))
 
     # init session
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -132,17 +119,14 @@ if __name__ == '__main__':
     # Warmup on a dummy image
     im = 128 * np.ones((300, 300, 3), dtype=np.uint8)
     for i in xrange(2):
-        _, _ = im_detect(sess, net, im)
+        _, _ = im_detect_rpn(sess, net, im)
 
     im_names = glob.glob(os.path.join(cfg.DATA_DIR, 'demo', '*.png')) + \
                glob.glob(os.path.join(cfg.DATA_DIR, 'demo', '*.jpg'))
 
-#    for im_name in im_names[0]:
-    if True:#just for indent 
-        im_name = im_names[0]
+    for im_name in im_names:
         print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
         print 'Demo for {:s}'.format(im_name)
         demo(sess, net, im_name)
-
-    plt.show()
+        plt.show()
 
