@@ -41,4 +41,4 @@ TEST:
 RETINA:
   PI: 0.5
 SDS:
-  SDS_ON: True
+  SDS_ON: False
