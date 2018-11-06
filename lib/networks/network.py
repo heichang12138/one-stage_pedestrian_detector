@@ -558,6 +558,10 @@ class Network(object):
             rpn_bbox_inside_weights = tf.reshape(tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep), [-1, 4])
 
             if cfg.RETINA.RETINA_ON:
+                if cfg.OHEM.OHEM_ON:
+                    print("Cannot use Focal loss and OHEM at the same time!")
+                    import sys
+                    sys.exit()
                 gamma = cfg.RETINA.GAMMA
                 alpha = cfg.RETINA.ALPHA
                 rpn_label = tf.cast(rpn_label, tf.bool)
@@ -571,6 +575,17 @@ class Network(object):
                 rpn_cross_entropy_n = tf.nn.sparse_softmax_cross_entropy_with_logits(
                         logits=rpn_cls_score, labels=rpn_label)
                 rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)
+                if cfg.OHEM.OHEM_ON:
+                    fg_ = tf.equal(rpn_label, 1)
+                    bg_ = tf.equal(rpn_label, 0)
+                    pos_inds = tf.where(fg_)
+                    neg_inds = tf.where(bg_)
+                    rpn_cross_entropy_n_pos = tf.reshape(tf.gather(rpn_cross_entropy_n, pos_inds), [-1])
+                    rpn_cross_entropy_n_neg = tf.reshape(tf.gather(rpn_cross_entropy_n, neg_inds), [-1])
+                    top_k = tf.cast(tf.minimum(tf.shape(rpn_cross_entropy_n_neg)[0], cfg.OHEM.BATCHSIZE[i]), tf.int32)
+                    rpn_cross_entropy_n_neg, _ = tf.nn.top_k(rpn_cross_entropy_n_neg, k=top_k)
+                    rpn_cross_entropy = tf.reduce_sum(rpn_cross_entropy_n_neg) / (tf.reduce_sum(tf.cast(bg_, tf.float32)) + 1.0) \
+                                + tf.reduce_sum(rpn_cross_entropy_n_pos) / (tf.reduce_sum(tf.cast(fg_, tf.float32)) + 1.0)
 
             rpn_loss_box_n = tf.reduce_sum(self.smooth_l1_dist(
                 rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), axis=[1])

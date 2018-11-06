@@ -138,6 +138,12 @@ __C.ATROUS = edict()
 
 __C.ATROUS.ATROUS_ON = False
 
+# ------------------OHEM---------------------------
+__C.OHEM = edict()
+
+__C.OHEM.OHEM_ON = False
+__C.OHEM.BATCHSIZE = [96, 32]
+
 def get_output_dir(imdb, weights_filename):
     """Return the directory where experimental artifacts are placed.
     If the directory does not exist, it is created.
