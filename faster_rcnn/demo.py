@@ -6,7 +6,6 @@ import argparse
 import os.path as osp
 import glob
 import pprint
-import pdb
 
 this_dir = osp.dirname(__file__)
 print(this_dir)
@@ -19,7 +18,7 @@ from lib.utils.timer import Timer
 
 CLASSES = ('__background__','pedestrian')
 
-def vis_detections(im, class_name, dets, ax, thresh=0.5):
+def vis_detections(im, class_name, dets, ax, im_name, thresh=0.5):
     """Draw detected bounding boxes."""
     inds = np.where(dets[:, -1] >= thresh)[0]
     if len(inds) == 0:
@@ -33,19 +32,15 @@ def vis_detections(im, class_name, dets, ax, thresh=0.5):
             plt.Rectangle((bbox[0], bbox[1]),
                           bbox[2] - bbox[0],
                           bbox[3] - bbox[1], fill=False,
-                          edgecolor='red', linewidth=1)
+                          edgecolor='g', linewidth=3)
         )
         ax.text(bbox[0], bbox[1] - 2,
-                '{:.3f}'.format(score),
+                '{:.2f}'.format(score),
                 bbox=dict(facecolor='blue', alpha=0.5),
-                fontsize=10, color='white')
-
-    ax.set_title(('{} detections with '
-                  'p({} | box) >= {:.1f}').format(class_name, class_name,
-                                                  thresh),
-                 fontsize=14)
+                fontsize=12, color='white')
     plt.axis('off')
     plt.tight_layout()
+    plt.savefig('det_'+im_name.split('/')[-1])
     plt.draw()
 
 
@@ -78,7 +73,7 @@ def demo(sess, net, image_name):
                           cls_scores[:, np.newaxis])).astype(np.float32)
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
-        vis_detections(im, cls, dets, ax, thresh=CONF_THRESH)
+        vis_detections(im, cls, dets, ax, image_name, thresh=CONF_THRESH)
 
 
 def parse_args():
