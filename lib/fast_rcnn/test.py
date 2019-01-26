@@ -124,8 +124,8 @@ def im_detect_rpn(sess, net, im, boxes=None):
     boxes = rois[:,:4]/im_scales[0]
     scores = rois[:,-1]
     # for compatible with origial version
-    boxes = np.concatenate((boxes,boxes),axis=1)
-    scores = np.concatenate((scores[:,np.newaxis],scores[:,np.newaxis]),axis=1)
+#    boxes = np.concatenate((boxes,boxes),axis=1)
+#    scores = np.concatenate((scores[:,np.newaxis],scores[:,np.newaxis]),axis=1)
     return scores,boxes
         
 def vis_detections(im, class_name, dets, thresh=0.05):
@@ -168,42 +168,18 @@ def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05,
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
         scores, boxes = im_detect_rpn(sess, net, im, box_proposals)
-
         detect_time = _t['im_detect'].toc(average=False)
 
-        _t['misc'].tic()
+        cls_dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
+        all_boxes[1][i] = cls_dets
         if vis:
             image = im[:, :, (2, 1, 0)] 
             plt.cla()
             plt.imshow(image)
+            vis_detections(image, 'ped', cls_dets)
+            plt.show()
 
-        # skip j = 0, because it's the background class
-        for j in xrange(1, imdb.num_classes):
-            inds = np.where(scores[:, j] > thresh)[0]
-            cls_scores = scores[inds, j]
-            cls_boxes = boxes[inds, j*4:(j+1)*4]
-            cls_dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
-                .astype(np.float32, copy=False)
-            keep = nms(cls_dets, cfg.TEST.RPN_NMS_THRESH)
-            cls_dets = cls_dets[keep, :]
-            if vis:
-                vis_detections(image, imdb.classes[j], cls_dets)
-            all_boxes[j][i] = cls_dets
-        if vis:
-           plt.show()
-        # Limit to max_per_image detections *over all classes*
-        if max_per_image > 0:
-            image_scores = np.hstack([all_boxes[j][i][:, -1]
-                                      for j in xrange(1, imdb.num_classes)])
-            if len(image_scores) > max_per_image:
-                image_thresh = np.sort(image_scores)[-max_per_image]
-                for j in xrange(1, imdb.num_classes):
-                    keep = np.where(all_boxes[j][i][:, -1] >= image_thresh)[0]
-                    all_boxes[j][i] = all_boxes[j][i][keep, :]
-        nms_time = _t['misc'].toc(average=False)
-
-        print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
-              .format(i + 1, num_images, detect_time, nms_time)
+        print 'im_detect: {:d}/{:d} {:.3f}s' .format(i + 1, num_images, detect_time)
 
 
     with open(det_file, 'wb') as f:
