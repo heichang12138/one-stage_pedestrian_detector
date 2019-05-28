@@ -133,11 +133,6 @@ __C.MULTISCALE.MS_ON = False
 # useful when RETINA_ON=False
 __C.MULTISCALE.BATCHSIZE = [96, 32]# [C5,C6]
 
-# -----------------Atrous--------------------------
-__C.ATROUS = edict()
-
-__C.ATROUS.ATROUS_ON = False
-
 # ------------------OHEM---------------------------
 __C.OHEM = edict()
 

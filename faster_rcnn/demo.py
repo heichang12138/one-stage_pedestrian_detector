@@ -1,33 +1,26 @@
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
-import os, sys, cv2
+import os, cv2
 import argparse
-import os.path as osp
 import glob
 import pprint
 
-this_dir = osp.dirname(__file__)
-print(this_dir)
-sys.path.append('/home/heichang/code/TFFRCNN')
 from lib.networks.factory import get_network
 from lib.fast_rcnn.config import cfg, cfg_from_file
 from lib.fast_rcnn.test import im_detect_rpn
 from lib.fast_rcnn.nms_wrapper import nms
 from lib.utils.timer import Timer
 
-CLASSES = ('__background__','pedestrian')
-
-def vis_detections(im, class_name, dets, ax, im_name, thresh=0.5):
-    """Draw detected bounding boxes."""
+def vis_detections(im, dets, thresh=0.5):
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.imshow(im[:,:,::-1], aspect='equal')
     inds = np.where(dets[:, -1] >= thresh)[0]
     if len(inds) == 0:
         return
-
     for i in inds:
         bbox = dets[i, :4]
         score = dets[i, -1]
-
         ax.add_patch(
             plt.Rectangle((bbox[0], bbox[1]),
                           bbox[2] - bbox[0],
@@ -40,88 +33,41 @@ def vis_detections(im, class_name, dets, ax, im_name, thresh=0.5):
                 fontsize=12, color='white')
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig('det_'+im_name.split('/')[-1])
     plt.draw()
-
-
-def demo(sess, net, image_name):
-    """Detect object classes in an image using pre-computed object proposals."""
-
-    # Load the demo image
-    im = cv2.imread(image_name)
-
-    # Detect all object classes and regress object bounds
-    timer = Timer()
-    timer.tic()
-    scores, boxes = im_detect_rpn(sess, net, im)
-    timer.toc()
-    print ('Detection took {:.3f}s for '
-           '{:d} object proposals').format(timer.total_time, boxes.shape[0])
-
-    # Visualize detections for each class
-    im = im[:, :, (2, 1, 0)]
-    fig, ax = plt.subplots(figsize=(12, 12))
-    ax.imshow(im, aspect='equal')
-
-    CONF_THRESH = 0.5
-    NMS_THRESH = 0.5
-    for cls_ind, cls in enumerate(CLASSES[1:]):
-        cls_ind += 1  # because we skipped background
-        cls_boxes = boxes[:, 4 * cls_ind:4 * (cls_ind + 1)]
-        cls_scores = scores[:, cls_ind]
-        dets = np.hstack((cls_boxes,
-                          cls_scores[:, np.newaxis])).astype(np.float32)
-        keep = nms(dets, NMS_THRESH)
-        dets = dets[keep, :]
-        vis_detections(im, cls, dets, ax, image_name, thresh=CONF_THRESH)
-
+    plt.show()
 
 def parse_args():
-    """Parse input arguments."""
-    parser = argparse.ArgumentParser(description='Faster R-CNN demo')
-    parser.add_argument('--gpu', dest='gpu_id', help='GPU device id to use [0]',
-                        default=0, type=int)
-    parser.add_argument('--cpu', dest='cpu_mode',
-                        help='Use CPU mode (overrides --gpu)',
-                        action='store_true')
-    parser.add_argument('--net', dest='demo_net', help='Network to use [vgg16]',
-                        default='VGGnet_test')
-    parser.add_argument('--model', dest='model', help='Model path',
-                        default=' ')
-    parser.add_argument('--cfg', dest='cfg_file',
-                        help='optional config file', default=None, type=str)
+    parser = argparse.ArgumentParser(description='A demo of one-stage pedestrian detector')
+    parser.add_argument('--gpu', dest='gpu_id', default=0, type=int)
+    parser.add_argument('--cpu', dest='cpu_mode', action='store_true')
+    parser.add_argument('--net', dest='demo_net', choices=['VGGnet_test', 'MSnet_test'], default='VGGnet_test')
+    parser.add_argument('--model', dest='model', help='Model path', required=True)
+    parser.add_argument('--cfg', dest='cfg_file', help='optional config file', default=None, type=str)
     args = parser.parse_args()
-
     return args
-
 
 if __name__ == '__main__':
     args = parse_args()
     if args.cfg_file is not None:
         cfg_from_file(args.cfg_file)
     pprint.pprint(cfg)
-
-    # init session
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
-    # load network
     net = get_network(args.demo_net)
-    # load model
     print ('Loading network {:s}... '.format(args.demo_net)),
     saver = tf.train.Saver()
     saver.restore(sess, args.model)
     print (' done.')
-
-    # Warmup on a dummy image
-    im = 128 * np.ones((300, 300, 3), dtype=np.uint8)
-    for i in xrange(2):
-        _, _ = im_detect_rpn(sess, net, im)
-
     im_names = glob.glob(os.path.join(cfg.DATA_DIR, 'demo', '*.png')) + \
                glob.glob(os.path.join(cfg.DATA_DIR, 'demo', '*.jpg'))
-
+    timer = Timer()
     for im_name in im_names:
-        print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
         print 'Demo for {:s}'.format(im_name)
-        demo(sess, net, im_name)
-        plt.show()
-
+        im = cv2.imread(im_name)
+        timer.tic()
+        scores, boxes = im_detect_rpn(sess, net, im)
+        timer.toc()
+        print('Detection took {:.3f}s for {:d} object proposals').format(timer.total_time, boxes.shape[0])
+        dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32)
+        keep = nms(dets, 0.5)
+        dets = dets[keep, :]
+        vis_detections(im, dets, thresh=0.5)

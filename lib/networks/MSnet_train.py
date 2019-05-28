@@ -32,21 +32,12 @@ class MSnet_train(Network):
              .max_pool(2, 2, 2, 2, padding='VALID', name='pool3')
              .conv(3, 3, 512, 1, 1, name='conv4_1')
              .conv(3, 3, 512, 1, 1, name='conv4_2')
-             .conv(3, 3, 512, 1, 1, name='conv4_3'))
-        if cfg.ATROUS.ATROUS_ON:
-            (self.feed('conv4_3')
-                 .max_pool(2, 2, 1, 1, padding='SAME', name='pool4')
-                 .atrous_conv(3, 3, 512, 2, name='conv5_1')
-                 .atrous_conv(3, 3, 512, 2, name='conv5_2')
-                 .atrous_conv(3, 3, 512, 2, name='conv5_3')
-                 .max_pool(2, 2, 2, 2, padding='VALID', name='pool5'))
-        else:
-            (self.feed('conv4_3')
-                 .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
-                 .conv(3, 3, 512, 1, 1, name='conv5_1')
-                 .conv(3, 3, 512, 1, 1, name='conv5_2')
-                 .conv(3, 3, 512, 1, 1, name='conv5_3')
-                 .max_pool(2, 2, 2, 2, padding='VALID', name='pool5'))
+             .conv(3, 3, 512, 1, 1, name='conv4_3')
+             .max_pool(2, 2, 2, 2, padding='VALID', name='pool4')
+             .conv(3, 3, 512, 1, 1, name='conv5_1')
+             .conv(3, 3, 512, 1, 1, name='conv5_2')
+             .conv(3, 3, 512, 1, 1, name='conv5_3')
+             .max_pool(2, 2, 2, 2, padding='VALID', name='pool5'))
         # SDS
         if cfg.SDS.SDS_ON:
             (self.feed('conv5_3')

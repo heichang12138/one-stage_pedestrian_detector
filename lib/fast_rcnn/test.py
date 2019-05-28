@@ -6,10 +6,31 @@ import matplotlib.pyplot as plt
 
 from .config import cfg, get_output_dir
 from ..utils.timer import Timer
-from ..utils.cython_nms import nms
 from ..utils.blob import im_list_to_blob
-from ..fast_rcnn.bbox_transform import bbox_transform_inv
 
+def vis_detections(im, dets, thresh=0.5):
+    inds = np.where(dets[:, -1] >= thresh)[0]
+    if len(inds) == 0:
+        return
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.imshow(im[:,:,::-1], aspect='equal')
+    for i in inds:
+        bbox = dets[i, :4]
+        score = dets[i, -1]
+        ax.add_patch(
+            plt.Rectangle((bbox[0], bbox[1]),
+                          bbox[2] - bbox[0],
+                          bbox[3] - bbox[1], fill=False,
+                          edgecolor='g', linewidth=3)
+        )
+        ax.text(bbox[0], bbox[1] - 2,
+                '{:.2f}'.format(score),
+                bbox=dict(facecolor='blue', alpha=0.5),
+                fontsize=12, color='white')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.draw()
+    plt.show()
 
 def _get_image_blob(im):
     """Converts an image into a network input.
@@ -73,46 +94,6 @@ def _rescale_boxes(boxes, inds, scales):
 
     return boxes
 
-
-def im_detect(sess, net, im, boxes=None):
-    """Detect object classes in an image given object proposals.
-    Arguments:
-        net (caffe.Net): Fast R-CNN network to use
-        im (ndarray): color image to test (in BGR order)
-        boxes (ndarray): R x 4 array of object proposals
-    Returns:
-        scores (ndarray): R x K array of object class scores (K includes
-            background as object category 0)
-        boxes (ndarray): R x (4*K) array of predicted bounding boxes
-    """
-
-    blobs, im_scales = _get_blobs(im, boxes)
-
-    im_blob = blobs['data']
-    blobs['im_info'] = np.array(
-        [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
-        dtype=np.float32)
-    feed_dict={net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
-
-    cls_score, cls_prob, bbox_pred, rois = \
-        sess.run([net.get_output('rpn_cls_score'), net.get_output('rpn_cls_prob'), net.get_output('rpn_bbox_pred'),net.get_output('rpn_rois')],\
-                 feed_dict=feed_dict)
-
-    assert len(im_scales) == 1, "Only single-image batch implemented"
-    boxes = rois[:, 1:5] / im_scales[0]
-    scores = cls_prob
-
-    if cfg.TEST.BBOX_REG:
-        # Apply bounding-box regression deltas
-        box_deltas = bbox_pred
-        pred_boxes = bbox_transform_inv(boxes, box_deltas)
-        pred_boxes = _clip_boxes(pred_boxes, im.shape)
-    else:
-        # Simply repeat the boxes, once for each class
-        pred_boxes = np.tile(boxes, (1, scores.shape[1]))
-
-    return scores, pred_boxes
-
 def im_detect_rpn(sess, net, im, boxes=None):
     blobs, im_scales = _get_blobs(im, boxes)
     im_blob = blobs['data']
@@ -123,64 +104,25 @@ def im_detect_rpn(sess, net, im, boxes=None):
     rois = sess.run(net.get_output('rois'), feed_dict=feed_dict)
     boxes = rois[:,:4]/im_scales[0]
     scores = rois[:,-1]
-    # for compatible with origial version
-#    boxes = np.concatenate((boxes,boxes),axis=1)
-#    scores = np.concatenate((scores[:,np.newaxis],scores[:,np.newaxis]),axis=1)
     return scores,boxes
-        
-def vis_detections(im, class_name, dets, thresh=0.05):
-    """Visual debugging of detections."""
-    import matplotlib.pyplot as plt 
-    for i in xrange(np.minimum(10, dets.shape[0])):
-        bbox = dets[i, :4] 
-        score = dets[i, -1] 
-        if score > thresh:
-            plt.gca().add_patch(
-                plt.Rectangle((bbox[0], bbox[1]),
-                              bbox[2] - bbox[0],
-                              bbox[3] - bbox[1], fill=False,
-                              edgecolor='g', linewidth=3)
-                )
-            plt.gca().text(bbox[0], bbox[1] - 2,
-                 '{:s} {:.3f}'.format(class_name, score),
-                 bbox=dict(facecolor='blue', alpha=0.5),
-                 fontsize=14, color='white')
-
-            plt.title('{}  {:.3f}'.format(class_name, score))
 
 def test_net(sess, net, imdb, weights_filename , max_per_image=300, thresh=0.05, vis=False):
     num_images = len(imdb.image_index)
-    # all detections are collected into:
-    #    all_boxes[cls][image] = N x 5 array of detections in
-    #    (x1, y1, x2, y2, score)
-    all_boxes = [[[] for _ in xrange(num_images)]
-                 for _ in xrange(imdb.num_classes)]
-
+    print('total samples: {:d}'.format(num_images))
+    all_boxes = [[[] for _ in xrange(num_images)] for _ in xrange(imdb.num_classes)]
     output_dir = get_output_dir(imdb, weights_filename)
-    # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
-
     det_file = os.path.join(output_dir, 'detections.pkl')
-
+    print('output will be saved in {}'.format(output_dir))
     for i in xrange(num_images):
-        # filter out any ground truth boxes
-        box_proposals = None
         im = cv2.imread(imdb.image_path_at(i))
         _t['im_detect'].tic()
-        scores, boxes = im_detect_rpn(sess, net, im, box_proposals)
+        scores, boxes = im_detect_rpn(sess, net, im, None)
         detect_time = _t['im_detect'].toc(average=False)
-
         cls_dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
         all_boxes[1][i] = cls_dets
         if vis:
-            image = im[:, :, (2, 1, 0)] 
-            plt.cla()
-            plt.imshow(image)
-            vis_detections(image, 'ped', cls_dets)
-            plt.show()
-
+            vis_detections(im, cls_dets, thresh=0.5)
         print 'im_detect: {:d}/{:d} {:.3f}s' .format(i + 1, num_images, detect_time)
-
-
     with open(det_file, 'wb') as f:
         cPickle.dump(all_boxes, f, cPickle.HIGHEST_PROTOCOL)

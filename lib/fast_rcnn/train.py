@@ -15,8 +15,7 @@ class SolverWrapper(object):
     use to unnormalize the learned bounding-box regression weights.
     """
 
-    def __init__(self, sess, network, imdb, roidb,
-                 output_dir, logdir, pretrained_model=None):
+    def __init__(self, sess, network, imdb, roidb, output_dir, logdir, pretrained_model=None):
         """Initialize the SolverWrapper."""
         self.net = network
         self.imdb = imdb
@@ -85,14 +84,12 @@ class SolverWrapper(object):
 
     def train_model(self, sess, max_iters, restore=False):
         data_layer = RoIDataLayer(self.roidb, self.imdb.num_classes)
-
         if cfg.MULTISCALE.MS_ON:
             loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_ms_loss()
         else:
             loss, rpn_cross_entropy, rpn_loss_box, rpn_loss_mask = self.net.build_loss()
 
         global_step = tf.Variable(0, trainable=False)
-
         # scalar summary
         if cfg.SDS.SDS_ON:
             tf.summary.scalar('rpn_loss_mask', rpn_loss_mask)
@@ -103,15 +100,9 @@ class SolverWrapper(object):
         # image writer
         # NOTE: this image is independent to summary_op
         log_image, log_image_data, log_image_name = self.build_image_summary()
-        # optimizer
-        if cfg.TRAIN.SOLVER == 'Adam':
-            opt = tf.train.AdamOptimizer(cfg.TRAIN.LEARNING_RATE)
-        elif cfg.TRAIN.SOLVER == 'RMS':
-            opt = tf.train.RMSPropOptimizer(cfg.TRAIN.LEARNING_RATE)
-        else:
-            lr = tf.Variable(cfg.TRAIN.LEARNING_RATE, trainable=False)
-            momentum = cfg.TRAIN.MOMENTUM
-            opt = tf.train.MomentumOptimizer(lr, momentum)
+        lr = tf.Variable(cfg.TRAIN.LEARNING_RATE, trainable=False)
+        momentum = cfg.TRAIN.MOMENTUM
+        opt = tf.train.MomentumOptimizer(lr, momentum)
         tvars = tf.trainable_variables()
         grads, norm = tf.clip_by_global_norm(tf.gradients(loss, tvars), 10.0)
         train_op = opt.apply_gradients(zip(grads, tvars), global_step=global_step)
@@ -122,12 +113,8 @@ class SolverWrapper(object):
 
         # load vgg16
         if self.pretrained_model is not None and not restore:
-            try:
-                print ('Loading pretrained model '
-                   'weights from {:s}').format(self.pretrained_model)
-                self.net.load(self.pretrained_model, sess, True)
-            except:
-                raise 'Check your pretrained model {:s}'.format(self.pretrained_model)
+            print ('Loading pretrained model weights from {:s}').format(self.pretrained_model)
+            self.net.load(self.pretrained_model, sess, True)
 
         # resuming a trainer
         if restore:
@@ -145,10 +132,8 @@ class SolverWrapper(object):
 
         for iter in range(restore_iter, max_iters):
             timer.tic()
-            # learning rate
             if iter != 0 and iter % cfg.TRAIN.STEPSIZE == 0:
                 sess.run(tf.assign(lr, lr.eval() * cfg.TRAIN.GAMMA))
-            # get one batch
             blobs = data_layer.forward()
 
             feed_dict={
@@ -278,8 +263,7 @@ def train_net(network, imdb, roidb, output_dir, log_dir,
     config.gpu_options.allocator_type = 'BFC'
     config.gpu_options.per_process_gpu_memory_fraction = 0.80
     with tf.Session(config=config) as sess:
-        sw = SolverWrapper(sess, network, imdb, roidb,
-                           output_dir, log_dir, pretrained_model)
+        sw = SolverWrapper(sess, network, imdb, roidb, output_dir, log_dir, pretrained_model)
         print 'Solving...'
         sw.train_model(sess, cfg.TRAIN.MAX_ITER, restore=restore)
         print 'done solving'
