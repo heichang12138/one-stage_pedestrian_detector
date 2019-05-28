@@ -1,6 +1,6 @@
 # One-stage Pedestrian Detector
 Improve RPN for better pedestrian detection:
-![](readme/pipeline.png)
+![](pipeline.png)
 
 ## Environment
 
@@ -53,7 +53,7 @@ python faster_rcnn/train_net.py --weights data/pretrain_model/VGG_imagenet.npy -
 
 ## Main results
 On Caltech:
-![](readme/caltech.png)
+![](caltech.png)
 
 On Caltech-new:
-![](readme/caltech_new.png)
+![](caltech_new.png)
